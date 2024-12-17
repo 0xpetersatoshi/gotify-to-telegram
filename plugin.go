@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/telegram"
 	"github.com/gin-gonic/gin"
 	"github.com/gotify/plugin-api"
 	"github.com/rs/zerolog"
@@ -27,6 +28,7 @@ func GetGotifyPluginInfo() plugin.Info {
 type Plugin struct {
 	logger    *zerolog.Logger
 	apiclient *api.Client
+	tgclient  *telegram.Client
 }
 
 // Enable enables the plugin.
@@ -60,9 +62,11 @@ func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	apiclient := api.NewClient("ws://localhost:8888", os.Getenv("GOTIFY_CLIENT_TOKEN"), &logger)
+	tgclient := telegram.NewClient(os.Getenv("TELEGRAM_BOT_TOKEN"), &logger)
 	p := &Plugin{
 		logger:    &logger,
 		apiclient: apiclient,
+		tgclient:  tgclient,
 	}
 	p.Start()
 }
