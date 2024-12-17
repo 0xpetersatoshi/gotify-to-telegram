@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -56,8 +55,8 @@ func (c *Client) close() error {
 	return c.conn.Close()
 }
 
-// ListenForMessages listens for messages from the gotify API
-func (c *Client) ListenForMessages() error {
+// ReadMessages reads messages received from the gotify server and sends them to the messages channel
+func (c *Client) ReadMessages(messages chan<- Message) error {
 	if err := c.connect(); err != nil {
 		return err
 	}
@@ -74,11 +73,8 @@ func (c *Client) ListenForMessages() error {
 			continue
 		}
 
-		bs, err := json.MarshalIndent(msg, "", "  ")
-		if err != nil {
-			c.logger.Error().Err(err).Msg("failed to marshal message from gotify server")
-			continue
-		}
-		c.logger.Info().Msgf("got message from gotify server: %s", string(bs))
+		messages <- msg
+
+		c.logger.Info().Msg("message received from gotify server and sent to channel")
 	}
 }

@@ -29,6 +29,8 @@ type Plugin struct {
 	logger    *zerolog.Logger
 	apiclient *api.Client
 	tgclient  *telegram.Client
+	messages  chan api.Message
+	done      chan struct{}
 }
 
 // Enable enables the plugin.
@@ -48,9 +50,19 @@ func (p *Plugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
 // Start starts the plugin.
 func (p *Plugin) Start() error {
 	p.logger.Debug().Msg("starting plugin")
-	p.apiclient.ListenForMessages()
+	go p.apiclient.ReadMessages(p.messages)
 
-	return nil
+	for {
+		select {
+		case <-p.done:
+			return nil
+		case msg := <-p.messages:
+			p.logger.Debug().Msgf("message received from gotify server: %s", msg.Message)
+			if err := p.tgclient.Send(msg, os.Getenv("TELEGRAM_CHAT_ID")); err != nil {
+				p.logger.Error().Err(err).Msg("failed to send message to Telegram")
+			}
+		}
+	}
 }
 
 // NewGotifyPluginInstance creates a plugin instance for a user context.
@@ -63,10 +75,15 @@ func main() {
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	apiclient := api.NewClient("ws://localhost:8888", os.Getenv("GOTIFY_CLIENT_TOKEN"), &logger)
 	tgclient := telegram.NewClient(os.Getenv("TELEGRAM_BOT_TOKEN"), &logger)
+	done := make(chan struct{})
+	messages := make(chan api.Message)
+
 	p := &Plugin{
 		logger:    &logger,
 		apiclient: apiclient,
 		tgclient:  tgclient,
+		done:      done,
+		messages:  messages,
 	}
 	p.Start()
 }
