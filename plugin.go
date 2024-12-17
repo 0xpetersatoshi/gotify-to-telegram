@@ -1,46 +1,68 @@
 package main
 
 import (
+	"os"
+
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
 	"github.com/gin-gonic/gin"
 	"github.com/gotify/plugin-api"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // GetGotifyPluginInfo returns gotify plugin info.
 func GetGotifyPluginInfo() plugin.Info {
 	return plugin.Info{
-		ModulePath:  "github.com/gotify/plugin-template",
+		ModulePath:  "github.com/0xPeterSatoshi/gotify-to-telegram",
 		Version:     "1.0.0",
-		Author:      "Your Name",
+		Author:      "0xPeterSatoshi",
 		Website:     "https://gotify.net/docs/plugin",
-		Description: "An example plugin with travis-ci building",
+		Description: "Send gotify notifications to telegram",
 		License:     "MIT",
-		Name:        "gotify/plugin-template",
+		Name:        "gotify-to-telegram",
 	}
 }
 
-// MyPlugin is the gotify plugin instance.
-type MyPlugin struct {
+// Plugin is the gotify plugin instance.
+type Plugin struct {
+	logger    *zerolog.Logger
+	apiclient *api.Client
 }
 
 // Enable enables the plugin.
-func (c *MyPlugin) Enable() error {
+func (p *Plugin) Enable() error {
 	return nil
 }
 
 // Disable disables the plugin.
-func (c *MyPlugin) Disable() error {
+func (p *Plugin) Disable() error {
 	return nil
 }
 
 // RegisterWebhook implements plugin.Webhooker.
-func (c *MyPlugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
+func (p *Plugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
+}
+
+// Start starts the plugin.
+func (p *Plugin) Start() error {
+	p.logger.Debug().Msg("starting plugin")
+	p.apiclient.ListenForMessages()
+
+	return nil
 }
 
 // NewGotifyPluginInstance creates a plugin instance for a user context.
 func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
-	return &MyPlugin{}
+	return &Plugin{}
 }
 
 func main() {
-	panic("this should be built as go plugin")
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+	apiclient := api.NewClient("ws://localhost:8888", os.Getenv("GOTIFY_CLIENT_TOKEN"), &logger)
+	p := &Plugin{
+		logger:    &logger,
+		apiclient: apiclient,
+	}
+	p.Start()
 }
