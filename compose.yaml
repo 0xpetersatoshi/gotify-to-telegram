@@ -1,0 +1,16 @@
+services:
+  gotify:
+    image: gotify/server:2.6.1
+    container_name: gotify
+    restart: unless-stopped
+    ports:
+      - 8888:80
+    environment:
+        GOTIFY_DEFAULTUSER_PASS: password
+    volumes:
+      - gotify_data:/app/data
+
+volumes:
+  gotify_data:
+    driver: local
+

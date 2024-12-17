@@ -35,4 +35,10 @@ build-linux-arm64: get-gotify-server-go-version update-go-mod
 
 build: build-linux-arm-7 build-linux-amd64 build-linux-arm64
 
+compose:
+	docker compose up -d
+
+compose-down:
+	docker compose down --volumes
+
 .PHONY: build
