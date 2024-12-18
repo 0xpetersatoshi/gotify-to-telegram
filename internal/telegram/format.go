@@ -75,13 +75,36 @@ func convertImageMarkdownToURL(message string, logger *zerolog.Logger) string {
 	})
 }
 
+// formatTitle formats the title for Telegram
+func formatTitle(msg api.Message) string {
+	return fmt.Sprintf("%s - %s", msg.AppName, msg.Title)
+}
+
+// formatExtras handles the recursive formatting of nested maps
+func formatExtras(builder *strings.Builder, extras map[string]interface{}, prefix string, logger *zerolog.Logger) {
+	for key, value := range extras {
+		escapedKey := escapeMarkdownV2(key)
+
+		// Handle nested maps
+		if nestedMap, ok := value.(map[string]interface{}); ok {
+			builder.WriteString(fmt.Sprintf("\n%s• %s:", prefix, escapedKey))
+			formatExtras(builder, nestedMap, prefix+"  ", logger) // Increase indentation for nested items
+		} else {
+			// Format simple values
+			escapedValue := escapeMarkdownV2(fmt.Sprint(value))
+			builder.WriteString(fmt.Sprintf("\n%s• %s: `%s`", prefix, escapedKey, escapedValue))
+		}
+	}
+}
+
 // formatMessageForTelegram formats the message for Telegram
 func formatMessageForTelegram(msg api.Message, logger *zerolog.Logger) string {
 	var builder strings.Builder
 
 	// Title in bold
 	if msg.Title != "" {
-		builder.WriteString(fmt.Sprintf("*%s*\n\n", escapeMarkdownV2(msg.Title)))
+		formattedTitle := formatTitle(msg)
+		builder.WriteString(fmt.Sprintf("*%s*\n\n", escapeMarkdownV2(formattedTitle)))
 	}
 
 	// Process the message content
@@ -113,17 +136,10 @@ func formatMessageForTelegram(msg api.Message, logger *zerolog.Logger) string {
 		builder.WriteString(escapeMarkdownV2(getPriorityIndicator(int(msg.Priority))))
 	}
 
-	// Application ID
-	builder.WriteString(fmt.Sprintf("\n\n`App ID: %d`", msg.Appid))
-
 	// Add any extras if present and not empty
 	if len(msg.Extras) > 0 {
 		builder.WriteString("\n\n*Additional Info:*")
-		for key, value := range msg.Extras {
-			escapedKey := escapeMarkdownV2(key)
-			escapedValue := escapeMarkdownV2(fmt.Sprint(value))
-			builder.WriteString(fmt.Sprintf("\n• %s: `%s`", escapedKey, escapedValue))
-		}
+		formatExtras(&builder, msg.Extras, "", logger)
 	}
 
 	return builder.String()
