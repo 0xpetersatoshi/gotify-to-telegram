@@ -17,26 +17,32 @@ type Payload struct {
 }
 
 type Client struct {
-	token          string
-	logger         *zerolog.Logger
-	botAPIEndpoint string
+	token            string
+	logger           *zerolog.Logger
+	botAPIEndpoint   string
+	defaultParseMode string
 }
 
 // NewClient creates a new Telegram client
-func NewClient(token string, logger *zerolog.Logger) *Client {
+func NewClient(token string, logger *zerolog.Logger, parseMode string) *Client {
 	return &Client{
-		token:          token,
-		logger:         logger,
-		botAPIEndpoint: "https://api.telegram.org/bot" + token + "/sendMessage",
+		token:            token,
+		logger:           logger,
+		botAPIEndpoint:   "https://api.telegram.org/bot" + token + "/sendMessage",
+		defaultParseMode: parseMode,
 	}
 }
 
 // Send sends a message to Telegram
 func (c *Client) Send(message api.Message, chatID string) error {
+	c.logger.Debug().Msg("sending message to Telegram")
+	formattedMessage := formatMessageForTelegram(message, c.logger)
+	c.logger.Debug().Msgf("formatted message: %s", formattedMessage)
+
 	payload := Payload{
 		ChatID:    chatID,
-		Text:      message.Message,
-		ParseMode: "HTML",
+		Text:      formattedMessage,
+		ParseMode: c.defaultParseMode,
 	}
 
 	body, err := json.Marshal(payload)
@@ -44,6 +50,7 @@ func (c *Client) Send(message api.Message, chatID string) error {
 		return err
 	}
 
+	c.logger.Debug().Msg("making request to Telegram API")
 	if err := c.makeRequest(bytes.NewBuffer(body)); err != nil {
 		return err
 	}

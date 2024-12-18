@@ -74,7 +74,7 @@ func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	apiclient := api.NewClient("localhost:8888", os.Getenv("GOTIFY_CLIENT_TOKEN"), false, &logger)
-	tgclient := telegram.NewClient(os.Getenv("TELEGRAM_BOT_TOKEN"), &logger)
+	tgclient := telegram.NewClient(os.Getenv("TELEGRAM_BOT_TOKEN"), &logger, "MarkdownV2")
 	done := make(chan struct{})
 	messages := make(chan api.Message)
 
