@@ -73,7 +73,7 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
-	apiclient := api.NewClient("ws://localhost:8888", os.Getenv("GOTIFY_CLIENT_TOKEN"), &logger)
+	apiclient := api.NewClient("localhost:8888", os.Getenv("GOTIFY_CLIENT_TOKEN"), false, &logger)
 	tgclient := telegram.NewClient(os.Getenv("TELEGRAM_BOT_TOKEN"), &logger)
 	done := make(chan struct{})
 	messages := make(chan api.Message)
@@ -85,5 +85,7 @@ func main() {
 		done:      done,
 		messages:  messages,
 	}
-	p.Start()
+	if err := p.Start(); err != nil {
+		panic(err)
+	}
 }
