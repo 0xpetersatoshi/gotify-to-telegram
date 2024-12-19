@@ -62,14 +62,6 @@ type ClientOpts struct {
 func NewClient(opts ClientOpts) *Client {
 	cache := cache.New(60*time.Minute, 120*time.Minute)
 
-	if opts.Host == "" {
-		opts.ErrChan <- errors.New("gotify host is not set. Please set the GOTIFY_HOST environment variable.")
-	}
-
-	if opts.ClientToken == "" {
-		opts.ErrChan <- errors.New("gotify client token is not set. Please set the GOTIFY_CLIENT_TOKEN environment variable.")
-	}
-
 	if opts.Logger == nil {
 		logger := zerolog.New(io.Discard).With().Timestamp().Logger()
 		opts.Logger = &logger
@@ -80,12 +72,22 @@ func NewClient(opts ClientOpts) *Client {
 		clientToken: opts.ClientToken,
 		logger:      opts.Logger,
 		ssl:         opts.Ssl,
+		messages:    opts.Messages,
+		errChan:     opts.ErrChan,
 		cache:       cache,
 	}
 }
 
 // connect connects to the gotify API
-func (c *Client) connect() error {
+func (c *Client) connect() {
+	c.logger.Debug().Msg("connecting to gotify API")
+	if c.host == "" {
+		c.errChan <- errors.New("gotify host is not set. Please set the GOTIFY_HOST environment variable.")
+	}
+
+	if c.clientToken == "" {
+		c.errChan <- errors.New("gotify client token is not set. Please set the GOTIFY_CLIENT_TOKEN environment variable.")
+	}
 	var protocol string
 	if c.ssl {
 		protocol = "wss://"
@@ -97,28 +99,30 @@ func (c *Client) connect() error {
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(endpoint, nil)
-	if err != nil {
-		c.logger.Error().Err(err).Msg("failed to connect to gotify server")
-		return err
+	for {
+		conn, _, err := dialer.Dial(endpoint, nil)
+		if err == nil {
+			c.conn = conn
+			c.logger.Info().
+				Str("protocol", protocol).
+				Str("host", c.host).
+				Msg("connected to gotify server")
+			break
+		}
+
+		sleepTime := 5
+		c.logger.Error().Err(err).Msgf("failed to connect to gotify server... sleeping for %d seconds", sleepTime)
+		time.Sleep(time.Duration(sleepTime) * time.Second)
 	}
-
-	c.logger.Info().
-		Str("host", c.host).
-		Msg("connected to gotify server")
-
-	c.conn = conn
-	return nil
 }
 
 // Start starts the gotify API client
 func (c *Client) Start() {
-	if err := c.connect(); err != nil {
-		c.errChan <- err
-	}
+	c.logger.Debug().Msg("starting gotify API client")
+	c.connect()
 	defer c.Close()
 
-	c.ReadMessages()
+	c.readMessages()
 }
 
 // Close closes the gotify API connection
@@ -130,8 +134,8 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// ReadMessages reads messages received from the gotify server and sends them to the messages channel
-func (c *Client) ReadMessages() {
+// readMessages reads messages received from the gotify server and sends them to the messages channel
+func (c *Client) readMessages() {
 	c.logger.Info().
 		Str("host", c.host).
 		Msg("listening for messages from gotify server")

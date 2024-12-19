@@ -54,6 +54,8 @@ func (c *Client) Send(message api.Message, chatID string) error {
 	if err := c.makeRequest(bytes.NewBuffer(body)); err != nil {
 		return err
 	}
+
+	c.logger.Info().Msg("message successfully sent to Telegram")
 	return nil
 }
 

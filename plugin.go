@@ -41,7 +41,7 @@ type Plugin struct {
 
 // Enable enables the plugin.
 func (p *Plugin) Enable() error {
-	p.logger.Debug().Msg("enabling plugin")
+	p.logger.Info().Msg("enabling plugin")
 	go p.Start()
 	return nil
 }
@@ -75,7 +75,8 @@ func (p *Plugin) Start() error {
 	if p.apiclient == nil {
 		p.errChan <- errors.New("api client is not initialized")
 	} else {
-		p.apiclient.Start()
+		p.logger.Debug().Msg("api client initialized")
+		go p.apiclient.Start()
 	}
 
 	p.logger.Debug().Msg("starting Telegram client")
@@ -86,7 +87,9 @@ func (p *Plugin) Start() error {
 			return nil
 
 		case err := <-p.errChan:
-			p.logger.Error().Err(err).Msg("error received")
+			if err != nil {
+				p.logger.Error().Err(err).Msg("error received")
+			}
 
 		case msg := <-p.messages:
 			p.logger.Debug().Msgf("message received from gotify server: %s", msg.Message)
@@ -108,11 +111,12 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 		Uint("user_id", ctx.ID).
 		Str("user_name", ctx.Name).
 		Bool("is_admin", ctx.Admin).
+		Caller().
 		Logger()
 
 	done := make(chan struct{}, 1)
 	messages := make(chan api.Message, 100)
-	errChan := make(chan error, 10)
+	errChan := make(chan error, 100)
 
 	apiOpts := api.ClientOpts{
 		Host:        os.Getenv("GOTIFY_HOST"),
