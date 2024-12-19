@@ -1,4 +1,5 @@
 BUILDDIR=./build
+PLUGINDIR=./plugins
 GOTIFY_VERSION=v2.6.1
 PLUGIN_NAME=gotify-to-telegram
 PLUGIN_ENTRY=plugin.go
@@ -36,10 +37,39 @@ build-linux-arm64: get-gotify-server-go-version update-go-mod
 
 build: build-linux-arm-7 build-linux-amd64 build-linux-arm64
 
-compose:
+compose-up:
 	docker compose up -d
 
 compose-down:
 	docker compose down --volumes
+
+test:
+	go test -v ./...
+
+create-plugin-dir:
+	mkdir -p ${PLUGINDIR}
+
+move-plugin-arm64: create-plugin-dir build-linux-arm64
+	cp ${BUILDDIR}/${PLUGIN_NAME}-linux-arm64${FILE_SUFFIX}.so ${PLUGINDIR}
+
+setup-gotify: compose-up
+	@echo "Waiting for Gotify to start..."
+	@sleep 5
+	$(eval NEW_TOKEN := $(shell curl -s -f -X POST \
+		-u admin:password \
+		-H "Content-Type: application/json" \
+		-d '{"name":"test-client"}' \
+		http://localhost:8888/client \
+		| jq -r '.token'))
+	@if [ -n "$(NEW_TOKEN)" ]; then \
+		sed -i '' 's/^GOTIFY_CLIENT_TOKEN=.*/GOTIFY_CLIENT_TOKEN=$(NEW_TOKEN)/' .env && \
+		echo "GOTIFY_CLIENT_TOKEN updated in .env. Restarting gotify..." && \
+		docker compose down && docker compose up -d; \
+	else \
+		echo "Failed to get new token from Gotify"; \
+		exit 1; \
+	fi
+
+test-plugin-arm64: move-plugin-arm64 setup-gotify
 
 .PHONY: build

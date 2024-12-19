@@ -2,3 +2,6 @@
 vendor
 build
 *.so
+
+.env
+

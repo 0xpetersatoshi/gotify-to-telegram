@@ -7,8 +7,11 @@ services:
       - 8888:80
     environment:
         GOTIFY_DEFAULTUSER_PASS: password
+    env_file:
+      - .env
     volumes:
       - gotify_data:/app/data
+      - ./plugins/:/app/data/plugins
 
 volumes:
   gotify_data:
