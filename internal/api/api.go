@@ -40,8 +40,7 @@ type Application struct {
 
 // Client is a gotify API client
 type Client struct {
-	ssl         bool
-	host        string
+	serverURL   *url.URL
 	clientToken string
 	conn        *websocket.Conn
 	logger      *zerolog.Logger
@@ -56,8 +55,6 @@ type Config struct {
 	Logger      *zerolog.Logger
 	Messages    chan<- Message
 	ErrChan     chan<- error
-
-	ssl bool
 }
 
 // NewClient creates a new gotify API client
@@ -69,7 +66,7 @@ func NewClient(c Config) *Client {
 		c.Logger = &logger
 	}
 
-	if c.Url == nil {
+	if c.Url == nil || (c.Url != nil && c.Url.String() == "") {
 		// if no url is provided, default to localhost
 		c.Logger.Warn().Msg("gotify url is not set. Defaulting to localhost")
 		c.Url = &url.URL{
@@ -79,10 +76,9 @@ func NewClient(c Config) *Client {
 	}
 
 	return &Client{
-		host:        c.Url.Host,
+		serverURL:   c.Url,
 		clientToken: c.ClientToken,
 		logger:      c.Logger,
-		ssl:         c.Url.Scheme == "https",
 		messages:    c.Messages,
 		errChan:     c.ErrChan,
 		cache:       cache,
@@ -92,20 +88,20 @@ func NewClient(c Config) *Client {
 // connect connects to the gotify API
 func (c *Client) connect() {
 	c.logger.Debug().Msg("connecting to gotify API")
-	if c.host == "" {
-		c.errChan <- errors.New("gotify host is not set. Please set the GOTIFY_HOST environment variable.")
+	if c.serverURL.Host == "" {
+		c.errChan <- errors.New("gotify host is not set. Please set the GOTIFY_SERVER_URL environment variable.")
 	}
 
 	if c.clientToken == "" {
 		c.errChan <- errors.New("gotify client token is not set. Please set the GOTIFY_CLIENT_TOKEN environment variable.")
 	}
 	var protocol string
-	if c.ssl {
+	if c.serverURL.Scheme == "https" {
 		protocol = "wss://"
 	} else {
 		protocol = "ws://"
 	}
-	endpoint := protocol + c.host + "/stream?token=" + c.clientToken
+	endpoint := protocol + c.serverURL.Host + "/stream?token=" + c.clientToken
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
@@ -116,13 +112,17 @@ func (c *Client) connect() {
 			c.conn = conn
 			c.logger.Info().
 				Str("protocol", protocol).
-				Str("host", c.host).
+				Str("host", c.serverURL.Host).
 				Msg("connected to gotify server")
 			break
 		}
 
 		sleepTime := 5
-		c.logger.Error().Err(err).Msgf("failed to connect to gotify server... sleeping for %d seconds", sleepTime)
+		c.logger.Error().
+			Err(err).
+			Str("protocol", protocol).
+			Str("host", c.serverURL.Host).
+			Msgf("failed to connect to gotify server... sleeping for %d seconds", sleepTime)
 		time.Sleep(time.Duration(sleepTime) * time.Second)
 	}
 }
@@ -148,7 +148,7 @@ func (c *Client) Close() error {
 // readMessages reads messages received from the gotify server and sends them to the messages channel
 func (c *Client) readMessages() {
 	c.logger.Info().
-		Str("host", c.host).
+		Str("host", c.serverURL.Host).
 		Msg("listening for messages from gotify server")
 
 	for {
@@ -185,12 +185,6 @@ func (c *Client) readMessages() {
 
 // makeRequest makes a request to the gotify API and returns the raw response
 func (c *Client) makeRequest(method string, endpoint string, body *bytes.Buffer) (*http.Response, error) {
-	var protocol string
-	if c.ssl {
-		protocol = "https://"
-	} else {
-		protocol = "http://"
-	}
 	// Create request body if provided
 	var reqBody io.Reader
 	if body != nil {
@@ -200,7 +194,7 @@ func (c *Client) makeRequest(method string, endpoint string, body *bytes.Buffer)
 		}
 		reqBody = bytes.NewBuffer(jsonBody)
 	}
-	req, err := http.NewRequest(method, protocol+endpoint, reqBody)
+	req, err := http.NewRequest(method, endpoint, reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +216,7 @@ func (c *Client) makeRequest(method string, endpoint string, body *bytes.Buffer)
 
 // getApplications returns a list of applications
 func (c *Client) getApplications() ([]Application, error) {
-	endpoint := c.host + "/application?token=" + c.clientToken
+	endpoint := c.serverURL.String() + "/application?token=" + c.clientToken
 
 	res, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
