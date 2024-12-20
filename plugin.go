@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"errors"
 	"fmt"
 	"net/url"
@@ -16,6 +17,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
+
+//go:embed README.md
+var content embed.FS
 
 // GetGotifyPluginInfo returns gotify plugin info.
 func GetGotifyPluginInfo() plugin.Info {
@@ -150,12 +154,13 @@ func (p *Plugin) SetMessageHandler(handler plugin.MessageHandler) {
 // GetDisplay implements plugin.Displayer
 // Invoked when the user views the plugin settings. Plugins do not need to be enabled to handle GetDisplay calls.
 func (p *Plugin) GetDisplay(location *url.URL) string {
-	// TODO: add instructions
-	if p.userCtx.Admin {
-		return "You are an admin! You have super cow powers."
-	} else {
-		return "You are **NOT** an admin! You can do nothing:("
+	readme, err := content.ReadFile("README.md")
+	if err != nil {
+		p.logger.Error().Err(err).Msg("failed to read README.md")
+		return "Gotify to Telegram plugin - forwards Gotify messages to Telegram bots based on configurable routing rules."
 	}
+
+	return string(readme)
 }
 
 // DefaultConfig implements plugin.Configurer
@@ -167,9 +172,9 @@ func (p *Plugin) DefaultConfig() interface{} {
 		DefaultChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
 	}
 
-	gotifyURL, err := url.Parse(os.Getenv("GOTIFY_URL"))
+	gotifyURL, err := url.Parse(os.Getenv("GOTIFY_SERVER_URL"))
 	if err != nil {
-		p.logger.Error().Err(err).Msg("failed to parse GOTIFY_URL env var. Defaulting to localhost")
+		p.logger.Error().Err(err).Msg("failed to parse GOTIFY_SERVER_URL env var. Defaulting to localhost")
 		gotifyURL = &url.URL{
 			Scheme: "http",
 			Host:   "localhost:80",
@@ -227,9 +232,9 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
 
-	gotifyURL, err := url.Parse(os.Getenv("GOTIFY_URL"))
+	gotifyURL, err := url.Parse(os.Getenv("GOTIFY_SERVER_URL"))
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to parse GOTIFY_URL env var")
+		logger.Error().Err(err).Msg("failed to parse GOTIFY_SERVER_URL env var")
 	}
 
 	apiConfig := api.Config{
