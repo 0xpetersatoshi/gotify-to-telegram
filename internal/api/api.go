@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -49,31 +50,41 @@ type Client struct {
 	errChan     chan<- error
 }
 
-type ClientOpts struct {
-	Host        string
+type Config struct {
+	Url         *url.URL
 	ClientToken string
-	Ssl         bool
 	Logger      *zerolog.Logger
 	Messages    chan<- Message
 	ErrChan     chan<- error
+
+	ssl bool
 }
 
 // NewClient creates a new gotify API client
-func NewClient(opts ClientOpts) *Client {
+func NewClient(c Config) *Client {
 	cache := cache.New(60*time.Minute, 120*time.Minute)
 
-	if opts.Logger == nil {
+	if c.Logger == nil {
 		logger := zerolog.New(io.Discard).With().Timestamp().Logger()
-		opts.Logger = &logger
+		c.Logger = &logger
+	}
+
+	if c.Url == nil {
+		// if no url is provided, default to localhost
+		c.Logger.Warn().Msg("gotify url is not set. Defaulting to localhost")
+		c.Url = &url.URL{
+			Scheme: "http",
+			Host:   "localhost:80",
+		}
 	}
 
 	return &Client{
-		host:        opts.Host,
-		clientToken: opts.ClientToken,
-		logger:      opts.Logger,
-		ssl:         opts.Ssl,
-		messages:    opts.Messages,
-		errChan:     opts.ErrChan,
+		host:        c.Url.Host,
+		clientToken: c.ClientToken,
+		logger:      c.Logger,
+		ssl:         c.Url.Scheme == "https",
+		messages:    c.Messages,
+		errChan:     c.ErrChan,
 		cache:       cache,
 	}
 }

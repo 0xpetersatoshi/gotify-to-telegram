@@ -167,10 +167,19 @@ func (p *Plugin) DefaultConfig() interface{} {
 		DefaultChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
 	}
 
+	gotifyURL, err := url.Parse(os.Getenv("GOTIFY_URL"))
+	if err != nil {
+		p.logger.Error().Err(err).Msg("failed to parse GOTIFY_URL env var. Defaulting to localhost")
+		gotifyURL = &url.URL{
+			Scheme: "http",
+			Host:   "localhost:80",
+		}
+	}
+
 	serverConfig := config.GotifyServerConfig{
-		Hostname:    os.Getenv("GOTIFY_HOSTNAME"),
-		Protocol:    os.Getenv("GOTIFY_PROTOCOL"),
-		Port:        os.Getenv("GOTIFY_PORT"),
+		Protocol:    gotifyURL.Scheme,
+		Hostname:    gotifyURL.Host,
+		Port:        gotifyURL.Port(),
 		ClientToken: os.Getenv("GOTIFY_CLIENT_TOKEN"),
 	}
 	return &config.Config{
@@ -218,15 +227,19 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
 
-	apiOpts := api.ClientOpts{
-		Host:        os.Getenv("GOTIFY_HOST"),
+	gotifyURL, err := url.Parse(os.Getenv("GOTIFY_URL"))
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to parse GOTIFY_URL env var")
+	}
+
+	apiConfig := api.Config{
+		Url:         gotifyURL,
 		ClientToken: os.Getenv("GOTIFY_CLIENT_TOKEN"),
-		Ssl:         false,
 		Logger:      &logger,
 		Messages:    messages,
 		ErrChan:     errChan,
 	}
-	apiclient := api.NewClient(apiOpts)
+	apiclient := api.NewClient(apiConfig)
 	tgclient := telegram.NewClient(os.Getenv("TELEGRAM_BOT_TOKEN"), &logger, "MarkdownV2")
 
 	logger.Debug().Msg("creating plugin instance")
