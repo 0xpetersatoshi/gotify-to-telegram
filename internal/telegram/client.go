@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
 	"github.com/rs/zerolog"
 )
 
@@ -28,19 +29,25 @@ func NewClient(token string, logger *zerolog.Logger, parseMode string) *Client {
 	return &Client{
 		token:            token,
 		logger:           logger,
-		botAPIEndpoint:   "https://api.telegram.org/bot" + token + "/sendMessage",
 		defaultParseMode: parseMode,
 	}
 }
 
+func (c *Client) buildBotEndpoint(token string) string {
+	return "https://api.telegram.org/bot" + token + "/sendMessage"
+}
+
 // Send sends a message to Telegram
-func (c *Client) Send(message api.Message, chatID string) error {
-	c.logger.Debug().Msg("sending message to Telegram")
+func (c *Client) Send(message api.Message, config config.TelegramBotConfig) error {
+	c.logger.Debug().
+		Uint32("app_id", message.AppID).
+		Str("app_name", message.AppName).
+		Msg("sending message to Telegram")
 	formattedMessage := formatMessageForTelegram(message, c.logger)
 	c.logger.Debug().Msgf("formatted message: %s", formattedMessage)
 
 	payload := Payload{
-		ChatID:    chatID,
+		ChatID:    config.ChatID,
 		Text:      formattedMessage,
 		ParseMode: c.defaultParseMode,
 	}
@@ -50,8 +57,10 @@ func (c *Client) Send(message api.Message, chatID string) error {
 		return err
 	}
 
+	endpoint := c.buildBotEndpoint(config.Token)
+
 	c.logger.Debug().Msg("making request to Telegram API")
-	if err := c.makeRequest(bytes.NewBuffer(body)); err != nil {
+	if err := c.makeRequest(endpoint, bytes.NewBuffer(body)); err != nil {
 		return err
 	}
 
@@ -60,8 +69,8 @@ func (c *Client) Send(message api.Message, chatID string) error {
 }
 
 // makeRequest makes a request to the Telegram API
-func (c *Client) makeRequest(body *bytes.Buffer) error {
-	req, err := http.NewRequest("POST", c.botAPIEndpoint, body)
+func (c *Client) makeRequest(endpoint string, body *bytes.Buffer) error {
+	req, err := http.NewRequest("POST", endpoint, body)
 	if err != nil {
 		return err
 	}
