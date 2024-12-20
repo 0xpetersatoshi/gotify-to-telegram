@@ -3,6 +3,7 @@ module github.com/0xPeterSatoshi/gotify-to-telegram
 go 1.23
 
 require (
+	github.com/caarlos0/env/v11 v11.3.1
 	github.com/gin-gonic/gin v1.10.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/gotify/plugin-api v1.0.0

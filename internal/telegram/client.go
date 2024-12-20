@@ -25,9 +25,8 @@ type Client struct {
 }
 
 // NewClient creates a new Telegram client
-func NewClient(token string, logger *zerolog.Logger, parseMode string) *Client {
+func NewClient(logger *zerolog.Logger, parseMode string) *Client {
 	return &Client{
-		token:            token,
 		logger:           logger,
 		defaultParseMode: parseMode,
 	}
@@ -38,7 +37,7 @@ func (c *Client) buildBotEndpoint(token string) string {
 }
 
 // Send sends a message to Telegram
-func (c *Client) Send(message api.Message, config config.TelegramBotConfig) error {
+func (c *Client) Send(message api.Message, config config.TelegramBot) error {
 	c.logger.Debug().
 		Uint32("app_id", message.AppID).
 		Str("app_name", message.AppName).
