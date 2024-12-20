@@ -2,11 +2,14 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/telegram"
 	"github.com/gin-gonic/gin"
 	"github.com/gotify/plugin-api"
@@ -34,6 +37,7 @@ type Plugin struct {
 	logger     *zerolog.Logger
 	apiclient  *api.Client
 	tgclient   *telegram.Client
+	config     *config.Config
 	messages   chan api.Message
 	done       chan struct{}
 	errChan    chan error
@@ -68,6 +72,45 @@ func (p *Plugin) Disable() error {
 func (p *Plugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
 }
 
+func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBotConfig {
+	var botName string
+	if p.config != nil {
+		for _, rule := range p.config.Rules {
+			for _, appid := range rule.AppIDs {
+				if appid == appID {
+					botName = rule.BotName
+				}
+			}
+		}
+	}
+
+	botConfig, exists := p.config.TelegramConfig.Bots[botName]
+	if exists {
+		p.logger.Debug().
+			Uint32("app_id", appID).
+			Str("bot_name", botName).
+			Msg("rule found for app_id")
+		return botConfig
+	} else {
+		// Fallback to default if no rule matches
+		p.logger.Warn().
+			Uint32("app_id", appID).
+			Str("bot_name", botName).
+			Msgf("no rule found for app_id: %d. Using default config", appID)
+		return config.TelegramBotConfig{
+			Token:  p.config.TelegramConfig.DefaultBotToken,
+			ChatID: p.config.TelegramConfig.DefaultChatID,
+		}
+	}
+}
+
+func (p *Plugin) handleMessage(msg api.Message) {
+	config := p.getTelegramBotConfigForAppID(msg.AppID)
+	if err := p.tgclient.Send(msg, config); err != nil {
+		p.logger.Error().Err(err).Msg("failed to send message to Telegram")
+	}
+}
+
 // Start starts the plugin.
 func (p *Plugin) Start() error {
 	p.logger.Debug().Msg("starting plugin")
@@ -93,15 +136,72 @@ func (p *Plugin) Start() error {
 
 		case msg := <-p.messages:
 			p.logger.Debug().Msgf("message received from gotify server: %s", msg.Message)
-			if err := p.tgclient.Send(msg, os.Getenv("TELEGRAM_CHAT_ID")); err != nil {
-				p.logger.Error().Err(err).Msg("failed to send message to Telegram")
-			}
+			p.handleMessage(msg)
 		}
 	}
 }
 
+// SetMessageHandler implements plugin.Messenger
+// Invoked during initialization
 func (p *Plugin) SetMessageHandler(handler plugin.MessageHandler) {
 	p.msgHandler = handler
+}
+
+// GetDisplay implements plugin.Displayer
+// Invoked when the user views the plugin settings. Plugins do not need to be enabled to handle GetDisplay calls.
+func (p *Plugin) GetDisplay(location *url.URL) string {
+	// TODO: add instructions
+	if p.userCtx.Admin {
+		return "You are an admin! You have super cow powers."
+	} else {
+		return "You are **NOT** an admin! You can do nothing:("
+	}
+}
+
+// DefaultConfig implements plugin.Configurer
+// The default configuration will be provided to the user for future editing. Also used for Unmarshaling.
+// Invoked whenever an unmarshaling is required.
+func (p *Plugin) DefaultConfig() interface{} {
+	tgConfig := config.TelegramConfig{
+		DefaultBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
+		DefaultChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
+	}
+
+	serverConfig := config.GotifyServerConfig{
+		Hostname:    os.Getenv("GOTIFY_HOSTNAME"),
+		Protocol:    os.Getenv("GOTIFY_PROTOCOL"),
+		Port:        os.Getenv("GOTIFY_PORT"),
+		ClientToken: os.Getenv("GOTIFY_CLIENT_TOKEN"),
+	}
+	return &config.Config{
+		TelegramConfig:     tgConfig,
+		GotifyServerConfig: serverConfig,
+	}
+}
+
+// ValidateAndSetConfig will be called every time the plugin is initialized or the configuration has been changed by the user.
+// Plugins should check whether the configuration is valid and optionally return an error.
+// Parameter is guaranteed to be the same type as the return type of DefaultConfig()
+func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
+	c, ok := newConfig.(*config.Config)
+	if !ok {
+		return fmt.Errorf("invalid config type: expected *config.Config, got %T", newConfig)
+	}
+	// Validate Telegram config
+	if c.TelegramConfig.DefaultBotToken == "" {
+		return errors.New("telegram.default_bot_token is required")
+	}
+	if c.TelegramConfig.DefaultChatID == "" {
+		return errors.New("telegram.default_chat_id is required")
+	}
+
+	// Validate Gotify server config
+	if c.GotifyServerConfig.Hostname == "" {
+		return errors.New("gotify_server.hostname is required")
+	}
+
+	p.config = c
+	return nil
 }
 
 // NewGotifyPluginInstance creates a plugin instance for a user context.
