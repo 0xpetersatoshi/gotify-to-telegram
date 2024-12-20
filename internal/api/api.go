@@ -16,7 +16,7 @@ import (
 
 type Message struct {
 	Id             uint32
-	Appid          uint32
+	AppID          uint32
 	AppName        string
 	AppDescription string
 	Message        string
@@ -149,19 +149,19 @@ func (c *Client) readMessages() {
 		}
 
 		// add app name and description to message
-		appItem, found := c.cache.Get(fmt.Sprintf("%d", msg.Appid))
+		appItem, found := c.cache.Get(fmt.Sprintf("%d", msg.AppID))
 		if found {
 			app := appItem.(Application)
 			msg.AppName = app.Name
 			msg.AppDescription = app.Description
 		} else {
-			app, err := c.getApplicationByID(msg.Appid)
+			app, err := c.getApplicationByID(msg.AppID)
 			if err != nil {
 				c.logger.Error().Err(err).Msg("failed to get application from gotify server")
 				c.errChan <- err
 				continue
 			}
-			c.cache.SetDefault(fmt.Sprintf("%d", msg.Appid), *app)
+			c.cache.SetDefault(fmt.Sprintf("%d", msg.AppID), *app)
 			msg.AppName = app.Name
 			msg.AppDescription = app.Description
 		}
