@@ -2,6 +2,7 @@
 vendor
 build
 *.so
+.DS_Store
 
 .env
 
