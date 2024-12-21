@@ -3,8 +3,10 @@ package telegram
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
@@ -18,10 +20,9 @@ type Payload struct {
 }
 
 type Client struct {
-	token            string
 	logger           *zerolog.Logger
-	botAPIEndpoint   string
 	defaultParseMode string
+	httpClient       *http.Client
 }
 
 // NewClient creates a new Telegram client
@@ -29,6 +30,7 @@ func NewClient(logger *zerolog.Logger, parseMode string) *Client {
 	return &Client{
 		logger:           logger,
 		defaultParseMode: parseMode,
+		httpClient:       &http.Client{},
 	}
 }
 
@@ -38,12 +40,20 @@ func (c *Client) buildBotEndpoint(token string) string {
 
 // Send sends a message to Telegram
 func (c *Client) Send(message api.Message, config config.TelegramBot) error {
+	if config.Token == "" {
+		return fmt.Errorf("telegram bot token is empty")
+	}
+	if config.ChatID == "" {
+		return fmt.Errorf("telegram chat ID is empty")
+	}
+
 	c.logger.Debug().
 		Uint32("app_id", message.AppID).
 		Str("app_name", message.AppName).
-		Msg("sending message to Telegram")
+		Str("chat_id", config.ChatID).
+		Msg("preparing to send message to Telegram")
+
 	formattedMessage := formatMessageForTelegram(message, c.logger)
-	c.logger.Debug().Msgf("formatted message: %s", formattedMessage)
 
 	payload := Payload{
 		ChatID:    config.ChatID,
@@ -53,17 +63,21 @@ func (c *Client) Send(message api.Message, config config.TelegramBot) error {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
 	endpoint := c.buildBotEndpoint(config.Token)
+	c.logger.Debug().
+		Str("endpoint", strings.Replace(endpoint, config.Token, "***", 1)).
+		Str("payload", string(body)).
+		Msg("sending request to Telegram API")
 
-	c.logger.Debug().Msg("making request to Telegram API")
 	if err := c.makeRequest(endpoint, bytes.NewBuffer(body)); err != nil {
-		return err
+		return fmt.Errorf("failed to make request: %w", err)
 	}
 
 	c.logger.Info().Msg("message successfully sent to Telegram")
+
 	return nil
 }
 
@@ -71,33 +85,29 @@ func (c *Client) Send(message api.Message, config config.TelegramBot) error {
 func (c *Client) makeRequest(endpoint string, body *bytes.Buffer) error {
 	req, err := http.NewRequest("POST", endpoint, body)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
-
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
-		c.logger.
-			Error().
-			Err(err).
-			Str("status", res.Status).
-			Msg("failed to send message to Telegram")
-		bs, err := io.ReadAll(res.Body)
-		if err != nil {
-			return err
-		}
-		c.logger.
-			Error().
-			Msgf("error from API: %s", string(bs))
-		return err
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram API error (status %d): %s", res.StatusCode, string(resBody))
+	}
+
+	c.logger.Debug().
+		Str("response", string(resBody)).
+		Msg("received response from Telegram API")
 
 	return nil
 }
