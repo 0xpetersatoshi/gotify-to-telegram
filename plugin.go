@@ -12,6 +12,7 @@ import (
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/telegram"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/gotify/plugin-api"
 	"github.com/rs/zerolog"
@@ -69,6 +70,12 @@ func (p *Plugin) Disable() error {
 	p.logger.Debug().Msg("sending done signal")
 	p.done <- struct{}{}
 
+	// Drain the done channel
+	select {
+	case <-p.done:
+	default:
+	}
+
 	return nil
 }
 
@@ -79,7 +86,7 @@ func (p *Plugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
 func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBot {
 	var botName string
 	if p.config != nil {
-		for _, rule := range p.config.Rules {
+		for _, rule := range p.config.Settings.Rules {
 			for _, appid := range rule.AppIDs {
 				if appid == appID {
 					botName = rule.BotName
@@ -88,7 +95,7 @@ func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBot {
 		}
 	}
 
-	botConfig, exists := p.config.TelegramConfig.Bots[botName]
+	botConfig, exists := p.config.Settings.Telegram.Bots[botName]
 	if exists {
 		p.logger.Debug().
 			Uint32("app_id", appID).
@@ -102,14 +109,25 @@ func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBot {
 			Str("bot_name", botName).
 			Msgf("no rule found for app_id: %d. Using default config", appID)
 		return config.TelegramBot{
-			Token:  p.config.TelegramConfig.DefaultBotToken,
-			ChatID: p.config.TelegramConfig.DefaultChatID,
+			Token:  p.config.Settings.Telegram.DefaultBotToken,
+			ChatID: p.config.Settings.Telegram.DefaultChatID,
 		}
 	}
 }
 
 func (p *Plugin) handleMessage(msg api.Message) {
+	p.logger.Debug().
+		Str("app_name", msg.AppName).
+		Uint32("app_id", msg.AppID).
+		Msg("handling message")
+
 	config := p.getTelegramBotConfigForAppID(msg.AppID)
+
+	p.logger.Debug().
+		Str("bot_token", utils.MaskToken(config.Token)).
+		Str("chat_id", config.ChatID).
+		Msg("using telegram config")
+
 	if err := p.tgclient.Send(msg, config); err != nil {
 		p.logger.Error().Err(err).Msg("failed to send message to Telegram")
 	}
@@ -139,7 +157,9 @@ func (p *Plugin) Start() error {
 			}
 
 		case msg := <-p.messages:
-			p.logger.Debug().Msgf("message received from gotify server: %s", msg.Message)
+			p.logger.Debug().
+				Interface("message", msg).
+				Msg("message received from gotify server")
 			p.handleMessage(msg)
 		}
 	}
@@ -167,25 +187,13 @@ func (p *Plugin) GetDisplay(location *url.URL) string {
 // The default configuration will be provided to the user for future editing. Also used for Unmarshaling.
 // Invoked whenever an unmarshaling is required.
 func (p *Plugin) DefaultConfig() interface{} {
-	envCfg, err := config.ParseEnvVars()
+	cfg, err := config.ParseEnvVars()
 	if err != nil {
 		p.logger.Error().Err(err).Msg("failed to parse env vars. Using defaults")
-		envCfg = config.CreateDefaultEnvConfig()
+		cfg = config.CreateDefaultPluginConfig()
 	}
 
-	tgConfig := config.Telegram{
-		DefaultBotToken: envCfg.TelegramBotToken,
-		DefaultChatID:   envCfg.TelegramChatID,
-	}
-
-	serverConfig := config.GotifyServer{
-		Url:         envCfg.GotifyServerURL,
-		ClientToken: envCfg.GotifyClientToken,
-	}
-	return &config.Plugin{
-		TelegramConfig:     tgConfig,
-		GotifyServerConfig: serverConfig,
-	}
+	return cfg
 }
 
 // ValidateAndSetConfig will be called every time the plugin is initialized or the configuration has been changed by the user.
@@ -197,40 +205,53 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		return fmt.Errorf("invalid config type: expected *config.Config, got %T", newConfig)
 	}
 	// Validate Telegram config
-	if pluginCfg.TelegramConfig.DefaultBotToken == "" {
-		return errors.New("telegram.default_bot_token is required")
+	if pluginCfg.Settings.Telegram.DefaultBotToken == "" {
+		return errors.New("settings.telegram.default_bot_token is required")
 	}
-	if pluginCfg.TelegramConfig.DefaultChatID == "" {
-		return errors.New("telegram.default_chat_id is required")
+	if pluginCfg.Settings.Telegram.DefaultChatID == "" {
+		return errors.New("settings.telegram.default_chat_id is required")
 	}
 
 	// Validate Gotify server config
-	if pluginCfg.GotifyServerConfig.Url == nil || pluginCfg.GotifyServerConfig.Url.String() == "" {
-		return errors.New("gotify_server.url is required")
+	if pluginCfg.Settings.GotifyServer.Url == nil || pluginCfg.Settings.GotifyServer.Url.String() == "" {
+		return errors.New("settings.gotify_server.url is required")
 	}
 
-	if pluginCfg.GotifyServerConfig.ClientToken == "" {
-		return errors.New("gotify_server.client_token is required")
+	if pluginCfg.Settings.GotifyServer.ClientToken == "" {
+		return errors.New("settings.gotify_server.client_token is required")
 	}
 
+	updatedLogger := p.logger.Level(pluginCfg.Settings.GetZerologLevel())
+	p.logger = &updatedLogger
+
+	p.logger.Info().Msg("validating and setting config")
 	p.config = pluginCfg
 
-	if err := p.RestartAPIWithNewConfig(); err != nil {
+	p.logger.Info().Msg("restarting clients")
+	p.Disable()
+
+	// Reset the done channel
+	p.done = make(chan struct{}, 1)
+
+	if err := p.updateAPIConfig(); err != nil {
 		return err
 	}
+
+	if err := p.updateTelegramConfig(); err != nil {
+		return err
+	}
+
+	go p.Start()
 
 	return nil
 }
 
-func (p *Plugin) RestartAPIWithNewConfig() error {
+func (p *Plugin) updateAPIConfig() error {
 	p.logger.Info().Msg("stopping api client")
-	if err := p.apiclient.Close(); err != nil {
-		return err
-	}
 
 	apiConfig := api.Config{
-		Url:         p.config.GotifyServerConfig.Url,
-		ClientToken: p.config.GotifyServerConfig.ClientToken,
+		Url:         p.config.Settings.GotifyServer.Url,
+		ClientToken: p.config.Settings.GotifyServer.ClientToken,
 		Logger:      p.logger,
 		Messages:    p.messages,
 		ErrChan:     p.errChan,
@@ -240,16 +261,19 @@ func (p *Plugin) RestartAPIWithNewConfig() error {
 	apiclient := api.NewClient(apiConfig)
 	p.apiclient = apiclient
 
-	p.logger.Info().Msg("restarting api client")
-	go p.apiclient.Start()
+	return nil
+}
 
+func (p *Plugin) updateTelegramConfig() error {
+	p.logger.Info().Msg("updating telegram client")
+	p.tgclient = telegram.NewClient(p.logger, p.config.Settings.Telegram.MessageFormat.ParseMode)
 	return nil
 }
 
 // NewGotifyPluginInstance creates a plugin instance for a user context.
 func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout}).With().
+		Str("plugin", "gotify-to-telegram").
 		Uint("user_id", ctx.ID).
 		Str("user_name", ctx.Name).
 		Bool("is_admin", ctx.Admin).
@@ -260,38 +284,30 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
 
-	envCfg, err := config.ParseEnvVars()
+	cfg, err := config.ParseEnvVars()
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to parse env vars. Using defaults")
-		envCfg = config.CreateDefaultEnvConfig()
+		cfg = config.CreateDefaultPluginConfig()
 	}
 
+	logLevel := cfg.Settings.GetZerologLevel()
+	logger = logger.Level(logLevel)
+
 	apiConfig := api.Config{
-		Url:         envCfg.GotifyServerURL,
-		ClientToken: envCfg.GotifyClientToken,
+		Url:         cfg.Settings.GotifyServer.Url,
+		ClientToken: cfg.Settings.GotifyServer.ClientToken,
 		Logger:      &logger,
 		Messages:    messages,
 		ErrChan:     errChan,
 	}
 	apiclient := api.NewClient(apiConfig)
-	tgclient := telegram.NewClient(&logger, "MarkdownV2")
+	tgclient := telegram.NewClient(&logger, cfg.Settings.Telegram.MessageFormat.ParseMode)
 
 	logger.Debug().Msg("creating plugin instance")
 
-	pluginCfg := &config.Plugin{
-		TelegramConfig: config.Telegram{
-			DefaultBotToken: envCfg.TelegramBotToken,
-			DefaultChatID:   envCfg.TelegramChatID,
-		},
-		GotifyServerConfig: config.GotifyServer{
-			Url:         envCfg.GotifyServerURL,
-			ClientToken: envCfg.GotifyClientToken,
-		},
-	}
-
 	return &Plugin{
 		userCtx:   ctx,
-		config:    pluginCfg,
+		config:    cfg,
 		logger:    &logger,
 		apiclient: apiclient,
 		tgclient:  tgclient,
@@ -313,6 +329,7 @@ func main() {
 	}
 
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout}).With().
+		Str("plugin", "gotify-to-telegram").
 		Uint("user_id", ctx.ID).
 		Str("user_name", ctx.Name).
 		Bool("is_admin", ctx.Admin).
