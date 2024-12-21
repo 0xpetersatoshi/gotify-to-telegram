@@ -2,12 +2,14 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -47,6 +49,10 @@ type Client struct {
 	cache       *cache.Cache
 	messages    chan<- Message
 	errChan     chan<- error
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	isConnected bool
 }
 
 type Config struct {
@@ -59,6 +65,7 @@ type Config struct {
 
 // NewClient creates a new gotify API client
 func NewClient(c Config) *Client {
+	ctx, cancel := context.WithCancel(context.Background())
 	cache := cache.New(60*time.Minute, 120*time.Minute)
 
 	if c.Logger == nil {
@@ -82,105 +89,175 @@ func NewClient(c Config) *Client {
 		messages:    c.Messages,
 		errChan:     c.ErrChan,
 		cache:       cache,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
 // connect connects to the gotify API
-func (c *Client) connect() {
-	c.logger.Debug().Msg("connecting to gotify API")
+func (c *Client) connect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.isConnected {
+		c.logger.Debug().Msg("already connected to gotify server")
+		return nil
+	}
+
 	if c.serverURL.Host == "" {
-		c.errChan <- errors.New("gotify host is not set. Please set the GOTIFY_SERVER_URL environment variable.")
+		return errors.New("gotify host is not set")
 	}
 
 	if c.clientToken == "" {
-		c.errChan <- errors.New("gotify client token is not set. Please set the GOTIFY_CLIENT_TOKEN environment variable.")
+		return errors.New("gotify client token is not set")
 	}
-	var protocol string
+
+	protocol := "ws://"
 	if c.serverURL.Scheme == "https" {
 		protocol = "wss://"
-	} else {
-		protocol = "ws://"
 	}
 	endpoint := protocol + c.serverURL.Host + "/stream?token=" + c.clientToken
+
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	for {
-		conn, _, err := dialer.Dial(endpoint, nil)
-		if err == nil {
-			c.conn = conn
-			c.logger.Info().
-				Str("protocol", protocol).
-				Str("host", c.serverURL.Host).
-				Msg("connected to gotify server")
-			break
-		}
-
-		sleepTime := 5
-		c.logger.Error().
-			Err(err).
-			Str("protocol", protocol).
-			Str("host", c.serverURL.Host).
-			Msgf("failed to connect to gotify server... sleeping for %d seconds", sleepTime)
-		time.Sleep(time.Duration(sleepTime) * time.Second)
+	conn, _, err := dialer.DialContext(c.ctx, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
 	}
+
+	c.conn = conn
+	c.isConnected = true
+
+	c.logger.Info().
+		Str("protocol", protocol).
+		Str("host", c.serverURL.Host).
+		Msg("connected to gotify server")
+
+	return nil
 }
 
 // Start starts the gotify API client
 func (c *Client) Start() {
 	c.logger.Debug().Msg("starting gotify API client")
-	c.connect()
-	defer c.Close()
 
-	c.readMessages()
+	for {
+		select {
+		case <-c.ctx.Done():
+			c.logger.Info().Msg("context cancelled, shutting down client")
+			return
+		default:
+			if err := c.connect(); err != nil {
+				c.logger.Error().Err(err).Msg("failed to connect")
+				select {
+				case <-c.ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+					continue
+				}
+			}
+
+			// Start message reading
+			if err := c.readMessages(); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					c.logger.Error().Err(err).Msg("error reading messages")
+				}
+			}
+
+			// Reset connection state
+			c.mu.Lock()
+			c.isConnected = false
+			c.mu.Unlock()
+		}
+	}
 }
 
 // Close closes the gotify API connection
 func (c *Client) Close() error {
-	if c.conn == nil {
-		c.logger.Debug().Msg("connection is not open")
-		return nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.cancel != nil {
+		c.cancel()
 	}
-	return c.conn.Close()
+
+	if c.conn != nil && c.isConnected {
+		// Send close message
+		err := c.conn.WriteMessage(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+		)
+		if err != nil {
+			c.logger.Warn().Err(err).Msg("error sending close message")
+		}
+
+		if err := c.conn.Close(); err != nil {
+			return fmt.Errorf("error closing connection: %w", err)
+		}
+		c.isConnected = false
+		c.logger.Debug().Msg("websocket connection closed")
+	}
+
+	return nil
 }
 
 // readMessages reads messages received from the gotify server and sends them to the messages channel
-func (c *Client) readMessages() {
-	c.logger.Info().
-		Str("host", c.serverURL.Host).
-		Msg("listening for messages from gotify server")
+func (c *Client) readMessages() error {
+	// Set read deadline
+	c.conn.SetPongHandler(func(string) error {
+		return c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
 
 	for {
-		var msg Message
-		if err := c.conn.ReadJSON(&msg); err != nil {
-			c.logger.Error().Err(err).Msg("failed to read message from gotify server")
-			c.errChan <- err
-			continue
-		}
+		select {
+		case <-c.ctx.Done():
+			return context.Canceled
+		default:
+			var msg Message
+			if err := c.conn.ReadJSON(&msg); err != nil {
+				c.mu.Lock()
+				c.isConnected = false
+				c.mu.Unlock()
 
-		// add app name and description to message
-		appItem, found := c.cache.Get(fmt.Sprintf("%d", msg.AppID))
-		if found {
-			app := appItem.(Application)
-			msg.AppName = app.Name
-			msg.AppDescription = app.Description
-		} else {
-			app, err := c.getApplicationByID(msg.AppID)
-			if err != nil {
-				c.logger.Error().Err(err).Msg("failed to get application from gotify server")
-				c.errChan <- err
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					return fmt.Errorf("websocket error: %w", err)
+				}
+				return err
+			}
+
+			if err := c.processMessage(msg); err != nil {
+				c.logger.Error().Err(err).Msg("failed to process message")
 				continue
 			}
-			c.cache.SetDefault(fmt.Sprintf("%d", msg.AppID), *app)
-			msg.AppName = app.Name
-			msg.AppDescription = app.Description
 		}
-
-		c.messages <- msg
-
-		c.logger.Info().Msg("message received from gotify server and sent to channel")
 	}
+}
+
+func (c *Client) processMessage(msg Message) error {
+	appItem, found := c.cache.Get(fmt.Sprintf("%d", msg.AppID))
+	if found {
+		app := appItem.(Application)
+		msg.AppName = app.Name
+		msg.AppDescription = app.Description
+	} else {
+		app, err := c.getApplicationByID(msg.AppID)
+		if err != nil {
+			return fmt.Errorf("failed to get application: %w", err)
+		}
+		c.cache.SetDefault(fmt.Sprintf("%d", msg.AppID), *app)
+		msg.AppName = app.Name
+		msg.AppDescription = app.Description
+	}
+
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	case c.messages <- msg:
+		c.logger.Info().Msg("message sent to channel")
+	}
+
+	return nil
 }
 
 // makeRequest makes a request to the gotify API and returns the raw response
