@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
 	"github.com/rs/zerolog"
 )
 
@@ -77,7 +79,7 @@ func convertImageMarkdownToURL(message string, logger *zerolog.Logger) string {
 
 // formatTitle formats the title for Telegram
 func formatTitle(msg api.Message) string {
-	return fmt.Sprintf("%s - %s", msg.AppName, msg.Title)
+	return fmt.Sprintf("[%s] %s", msg.AppName, msg.Title)
 }
 
 // formatExtras handles the recursive formatting of nested maps
@@ -98,13 +100,20 @@ func formatExtras(builder *strings.Builder, extras map[string]interface{}, prefi
 }
 
 // formatMessageForTelegram formats the message for Telegram
-func formatMessageForTelegram(msg api.Message, logger *zerolog.Logger) string {
-	var builder strings.Builder
+func formatMessageForTelegram(msg api.Message, formatOpts config.MessageFormatOptions, logger *zerolog.Logger) string {
+	var (
+		builder      strings.Builder
+		messageTitle string
+	)
 
 	// Title in bold
 	if msg.Title != "" {
-		formattedTitle := formatTitle(msg)
-		builder.WriteString(fmt.Sprintf("*%s*\n\n", escapeMarkdownV2(formattedTitle)))
+		if formatOpts.IncludeAppName {
+			messageTitle = formatTitle(msg)
+		} else {
+			messageTitle = msg.Title
+		}
+		builder.WriteString(fmt.Sprintf("*%s*\n\n", escapeMarkdownV2(messageTitle)))
 	}
 
 	// Process the message content
@@ -131,7 +140,7 @@ func formatMessageForTelegram(msg api.Message, logger *zerolog.Logger) string {
 	builder.WriteString(messageContent + "\n")
 
 	// Priority indicator using emojis
-	if msg.Priority > 0 {
+	if int(msg.Priority) > formatOpts.PriorityThreshold && formatOpts.IncludePriority {
 		builder.WriteString("\n")
 		builder.WriteString(escapeMarkdownV2(getPriorityIndicator(int(msg.Priority))))
 	}
@@ -140,6 +149,11 @@ func formatMessageForTelegram(msg api.Message, logger *zerolog.Logger) string {
 	if len(msg.Extras) > 0 {
 		builder.WriteString("\n\n*Additional Info:*")
 		formatExtras(&builder, msg.Extras, "", logger)
+	}
+
+	// Add timestamp
+	if formatOpts.IncludeTimestamp {
+		builder.WriteString(fmt.Sprintf("\n\n*%s*", time.Now().Format(time.RFC3339)))
 	}
 
 	return builder.String()

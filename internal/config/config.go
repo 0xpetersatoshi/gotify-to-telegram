@@ -10,8 +10,8 @@ import (
 
 // Settings represents global plugin settings
 type Settings struct {
-	// LogLevel can be "debug", "info", "warn", "error"
-	LogLevel string `yaml:"log_level" env:"TG_PLUGIN__LOG_LEVEL" envDefault:"info"`
+	// Log options
+	LogOptions LogOptions `yaml:"log_options"`
 	// Gotify server settings
 	GotifyServer GotifyServer `yaml:"gotify_server"`
 	// Telegram settings
@@ -20,14 +20,24 @@ type Settings struct {
 	Rules []RoutingRule `yaml:"rules"`
 }
 
+// Log options
+type LogOptions struct {
+	// LogLevel can be "debug", "info", "warn", "error"
+	LogLevel string `yaml:"log_level" env:"TG_PLUGIN__LOG_LEVEL" envDefault:"info"`
+}
+
 // Message formatting options
-type MessageFormat struct {
+type MessageFormatOptions struct {
 	// Whether to include app name in message
 	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME" envDefault:"true"`
 	// Whether to include timestamp in message
 	IncludeTimestamp bool `yaml:"include_timestamp" env:"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP" envDefault:"false"`
 	// Telegram parse mode (Markdown, MarkdownV2, HTML)
 	ParseMode string `yaml:"parse_mode" env:"TG_PLUGIN__MESSAGE_PARSE_MODE" envDefault:"MarkdownV2"`
+	// Whether to include the message priority in the message
+	IncludePriority bool `yaml:"include_priority" env:"TG_PLUGIN__MESSAGE_INCLUDE_PRIORITY" envDefault:"false"`
+	// Whether to include the message priority above a certain level
+	PriorityThreshold int `yaml:"priority_threshold" env:"TG_PLUGIN__MESSAGE_PRIORITY_THRESHOLD" envDefault:"0"`
 }
 
 // Websocket settings
@@ -59,7 +69,7 @@ type Telegram struct {
 	// Mapping of bot names to bot tokens/chat IDs
 	Bots map[string]TelegramBot `yaml:"bots"`
 	// Message formatting options
-	MessageFormat MessageFormat `yaml:"message_format"`
+	MessageFormatOptions MessageFormatOptions `yaml:"message_format_options"`
 }
 
 // TelegramBot settings
@@ -88,7 +98,7 @@ func CreateDefaultPluginConfig() *Plugin {
 		DefaultBotToken: "",
 		DefaultChatID:   "",
 		Bots:            map[string]TelegramBot{},
-		MessageFormat: MessageFormat{
+		MessageFormatOptions: MessageFormatOptions{
 			IncludeAppName:   true,
 			IncludeTimestamp: false,
 			ParseMode:        "MarkdownV2",
@@ -109,7 +119,7 @@ func CreateDefaultPluginConfig() *Plugin {
 	}
 
 	settings := Settings{
-		LogLevel:     "info",
+		LogOptions:   LogOptions{LogLevel: "info"},
 		Telegram:     telegram,
 		Rules:        []RoutingRule{},
 		GotifyServer: gotifyServer,
@@ -120,8 +130,8 @@ func CreateDefaultPluginConfig() *Plugin {
 }
 
 // GetZerologLevel converts string log level to zerolog level
-func (s *Settings) GetZerologLevel() zerolog.Level {
-	switch strings.ToLower(s.LogLevel) {
+func (l *LogOptions) GetZerologLevel() zerolog.Level {
+	switch strings.ToLower(l.LogLevel) {
 	case "debug":
 		return zerolog.DebugLevel
 	case "info":

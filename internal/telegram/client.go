@@ -23,14 +23,16 @@ type Client struct {
 	logger           *zerolog.Logger
 	defaultParseMode string
 	httpClient       *http.Client
+	formatOpts       config.MessageFormatOptions
 }
 
 // NewClient creates a new Telegram client
-func NewClient(logger *zerolog.Logger, parseMode string) *Client {
+func NewClient(logger *zerolog.Logger, formatOpts config.MessageFormatOptions) *Client {
 	return &Client{
 		logger:           logger,
-		defaultParseMode: parseMode,
+		defaultParseMode: formatOpts.ParseMode,
 		httpClient:       &http.Client{},
+		formatOpts:       formatOpts,
 	}
 }
 
@@ -53,7 +55,7 @@ func (c *Client) Send(message api.Message, config config.TelegramBot) error {
 		Str("chat_id", config.ChatID).
 		Msg("preparing to send message to Telegram")
 
-	formattedMessage := formatMessageForTelegram(message, c.logger)
+	formattedMessage := formatMessageForTelegram(message, c.formatOpts, c.logger)
 
 	payload := Payload{
 		ChatID:    config.ChatID,

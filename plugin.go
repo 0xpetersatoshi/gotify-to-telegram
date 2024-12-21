@@ -221,7 +221,7 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		return errors.New("settings.gotify_server.client_token is required")
 	}
 
-	updatedLogger := p.logger.Level(pluginCfg.Settings.GetZerologLevel())
+	updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
 	p.logger = &updatedLogger
 
 	p.logger.Info().Msg("validating and setting config")
@@ -266,7 +266,7 @@ func (p *Plugin) updateAPIConfig() error {
 
 func (p *Plugin) updateTelegramConfig() error {
 	p.logger.Info().Msg("updating telegram client")
-	p.tgclient = telegram.NewClient(p.logger, p.config.Settings.Telegram.MessageFormat.ParseMode)
+	p.tgclient = telegram.NewClient(p.logger, p.config.Settings.Telegram.MessageFormatOptions)
 	return nil
 }
 
@@ -290,7 +290,7 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 		cfg = config.CreateDefaultPluginConfig()
 	}
 
-	logLevel := cfg.Settings.GetZerologLevel()
+	logLevel := cfg.Settings.LogOptions.GetZerologLevel()
 	logger = logger.Level(logLevel)
 
 	apiConfig := api.Config{
@@ -301,7 +301,7 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 		ErrChan:     errChan,
 	}
 	apiclient := api.NewClient(apiConfig)
-	tgclient := telegram.NewClient(&logger, cfg.Settings.Telegram.MessageFormat.ParseMode)
+	tgclient := telegram.NewClient(&logger, cfg.Settings.Telegram.MessageFormatOptions)
 
 	logger.Debug().Msg("creating plugin instance")
 
