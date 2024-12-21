@@ -153,7 +153,8 @@ func formatMessageForTelegram(msg api.Message, formatOpts config.MessageFormatOp
 
 	// Add timestamp
 	if formatOpts.IncludeTimestamp {
-		builder.WriteString(fmt.Sprintf("\n\n*%s*", time.Now().Format(time.RFC3339)))
+		formattedTimestamp := time.Now().Format(time.RFC3339)
+		builder.WriteString(fmt.Sprintf("\n\ntimestamp: %s", escapeMarkdownV2(formattedTimestamp)))
 	}
 
 	return builder.String()

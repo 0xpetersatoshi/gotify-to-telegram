@@ -109,8 +109,8 @@ func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBot {
 			Str("bot_name", botName).
 			Msgf("no rule found for app_id: %d. Using default config", appID)
 		return config.TelegramBot{
-			Token:  p.config.Settings.Telegram.DefaultBotToken,
-			ChatID: p.config.Settings.Telegram.DefaultChatID,
+			Token:   p.config.Settings.Telegram.DefaultBotToken,
+			ChatIDs: p.config.Settings.Telegram.DefaultChatIDs,
 		}
 	}
 }
@@ -125,11 +125,11 @@ func (p *Plugin) handleMessage(msg api.Message) {
 
 	p.logger.Debug().
 		Str("bot_token", utils.MaskToken(config.Token)).
-		Str("chat_id", config.ChatID).
+		Strs("chat_id", config.ChatIDs).
 		Msg("using telegram config")
 
-	if err := p.tgclient.Send(msg, config); err != nil {
-		p.logger.Error().Err(err).Msg("failed to send message to Telegram")
+	for _, chatID := range config.ChatIDs {
+		go p.tgclient.Send(msg, config.Token, chatID)
 	}
 }
 
@@ -208,7 +208,7 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	if pluginCfg.Settings.Telegram.DefaultBotToken == "" {
 		return errors.New("settings.telegram.default_bot_token is required")
 	}
-	if pluginCfg.Settings.Telegram.DefaultChatID == "" {
+	if len(pluginCfg.Settings.Telegram.DefaultChatIDs) == 0 {
 		return errors.New("settings.telegram.default_chat_id is required")
 	}
 
@@ -266,7 +266,11 @@ func (p *Plugin) updateAPIConfig() error {
 
 func (p *Plugin) updateTelegramConfig() error {
 	p.logger.Info().Msg("updating telegram client")
-	p.tgclient = telegram.NewClient(p.logger, p.config.Settings.Telegram.MessageFormatOptions)
+	p.tgclient = telegram.NewClient(
+		p.logger,
+		p.errChan,
+		p.config.Settings.Telegram.MessageFormatOptions,
+	)
 	return nil
 }
 
@@ -301,7 +305,11 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 		ErrChan:     errChan,
 	}
 	apiclient := api.NewClient(apiConfig)
-	tgclient := telegram.NewClient(&logger, cfg.Settings.Telegram.MessageFormatOptions)
+	tgclient := telegram.NewClient(
+		&logger,
+		errChan,
+		cfg.Settings.Telegram.MessageFormatOptions,
+	)
 
 	logger.Debug().Msg("creating plugin instance")
 

@@ -65,7 +65,7 @@ type Telegram struct {
 	// Default bot token
 	DefaultBotToken string `yaml:"default_bot_token" env:"TG_PLUGIN__TELEGRAM_DEFAULT_BOT_TOKEN" envDefault:""`
 	// Default chat ID
-	DefaultChatID string `yaml:"default_chat_id" env:"TG_PLUGIN__TELEGRAM_DEFAULT_CHAT_ID" envDefault:""`
+	DefaultChatIDs []string `yaml:"default_chat_ids" env:"TG_PLUGIN__TELEGRAM_DEFAULT_CHAT_IDS" envDefault:""`
 	// Mapping of bot names to bot tokens/chat IDs
 	Bots map[string]TelegramBot `yaml:"bots"`
 	// Message formatting options
@@ -76,8 +76,9 @@ type Telegram struct {
 type TelegramBot struct {
 	// Bot token
 	Token string `yaml:"token" env:"TG_PLUGIN__TELEGRAM_BOT_TOKEN" envDefault:""`
-	// Chat ID
-	ChatID string `yaml:"chat_id" env:"TG_PLUGIN__TELEGRAM_CHAT_ID" envDefault:""`
+	// TODO: Ensure env.Parse can handle this
+	// Chat IDs
+	ChatIDs []string `yaml:"chat_ids" env:"TG_PLUGIN__TELEGRAM_CHAT_IDS" envDefault:""`
 }
 
 // Telegram routing rule
@@ -96,7 +97,7 @@ type Plugin struct {
 func CreateDefaultPluginConfig() *Plugin {
 	telegram := Telegram{
 		DefaultBotToken: "",
-		DefaultChatID:   "",
+		DefaultChatIDs:  []string{},
 		Bots:            map[string]TelegramBot{},
 		MessageFormatOptions: MessageFormatOptions{
 			IncludeAppName:   true,

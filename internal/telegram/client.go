@@ -24,15 +24,17 @@ type Client struct {
 	defaultParseMode string
 	httpClient       *http.Client
 	formatOpts       config.MessageFormatOptions
+	errChan          chan error
 }
 
 // NewClient creates a new Telegram client
-func NewClient(logger *zerolog.Logger, formatOpts config.MessageFormatOptions) *Client {
+func NewClient(logger *zerolog.Logger, errChan chan error, formatOpts config.MessageFormatOptions) *Client {
 	return &Client{
 		logger:           logger,
 		defaultParseMode: formatOpts.ParseMode,
 		httpClient:       &http.Client{},
 		formatOpts:       formatOpts,
+		errChan:          errChan,
 	}
 }
 
@@ -41,46 +43,48 @@ func (c *Client) buildBotEndpoint(token string) string {
 }
 
 // Send sends a message to Telegram
-func (c *Client) Send(message api.Message, config config.TelegramBot) error {
-	if config.Token == "" {
-		return fmt.Errorf("telegram bot token is empty")
+func (c *Client) Send(message api.Message, token, chatID string) {
+	if token == "" {
+		c.errChan <- fmt.Errorf("telegram bot token is empty")
+		return
 	}
-	if config.ChatID == "" {
-		return fmt.Errorf("telegram chat ID is empty")
+	if chatID == "" {
+		c.errChan <- fmt.Errorf("telegram chat ID is empty")
+		return
 	}
 
 	c.logger.Debug().
 		Uint32("app_id", message.AppID).
 		Str("app_name", message.AppName).
-		Str("chat_id", config.ChatID).
+		Str("chat_id", chatID).
 		Msg("preparing to send message to Telegram")
 
 	formattedMessage := formatMessageForTelegram(message, c.formatOpts, c.logger)
 
 	payload := Payload{
-		ChatID:    config.ChatID,
+		ChatID:    chatID,
 		Text:      formattedMessage,
 		ParseMode: c.defaultParseMode,
 	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
+		c.errChan <- fmt.Errorf("failed to marshal payload: %w", err)
+		return
 	}
 
-	endpoint := c.buildBotEndpoint(config.Token)
+	endpoint := c.buildBotEndpoint(token)
 	c.logger.Debug().
-		Str("endpoint", strings.Replace(endpoint, config.Token, "***", 1)).
+		Str("endpoint", strings.Replace(endpoint, token, "***", 1)).
 		Str("payload", string(body)).
 		Msg("sending request to Telegram API")
 
 	if err := c.makeRequest(endpoint, bytes.NewBuffer(body)); err != nil {
-		return fmt.Errorf("failed to make request: %w", err)
+		c.errChan <- fmt.Errorf("failed to make request: %w", err)
+		return
 	}
 
 	c.logger.Info().Msg("message successfully sent to Telegram")
-
-	return nil
 }
 
 // makeRequest makes a request to the Telegram API
