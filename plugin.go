@@ -214,6 +214,35 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	}
 
 	p.config = pluginCfg
+
+	if err := p.RestartAPIWithNewConfig(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Plugin) RestartAPIWithNewConfig() error {
+	p.logger.Info().Msg("stopping api client")
+	if err := p.apiclient.Close(); err != nil {
+		return err
+	}
+
+	apiConfig := api.Config{
+		Url:         p.config.GotifyServerConfig.Url,
+		ClientToken: p.config.GotifyServerConfig.ClientToken,
+		Logger:      p.logger,
+		Messages:    p.messages,
+		ErrChan:     p.errChan,
+	}
+
+	p.logger.Info().Msg("creating api client with new config")
+	apiclient := api.NewClient(apiConfig)
+	p.apiclient = apiclient
+
+	p.logger.Info().Msg("restarting api client")
+	go p.apiclient.Start()
+
 	return nil
 }
 
