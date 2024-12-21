@@ -62,8 +62,8 @@ setup-gotify: compose-up
 		http://localhost:8888/client \
 		| jq -r '.token'))
 	@if [ -n "$(NEW_TOKEN)" ]; then \
-		sed -i '' 's/^GOTIFY_CLIENT_TOKEN=.*/GOTIFY_CLIENT_TOKEN=$(NEW_TOKEN)/' .env && \
-		echo "GOTIFY_CLIENT_TOKEN updated in .env. Restarting gotify..." && \
+		sed -i '' 's/^TG_PLUGIN__GOTIFY_CLIENT_TOKEN=.*/TG_PLUGIN__GOTIFY_CLIENT_TOKEN=$(NEW_TOKEN)/' .env && \
+		echo "TG_PLUGIN__GOTIFY_CLIENT_TOKEN updated in .env. Restarting gotify..." && \
 		docker compose down && docker compose up -d; \
 	else \
 		echo "Failed to get new token from Gotify"; \
