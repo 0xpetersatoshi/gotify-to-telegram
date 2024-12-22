@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/logger"
 	"github.com/gorilla/websocket"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog"
@@ -57,7 +59,6 @@ type Client struct {
 type Config struct {
 	Url         *url.URL
 	ClientToken string
-	Logger      *zerolog.Logger
 	Messages    chan<- Message
 	ErrChan     chan<- error
 }
@@ -66,25 +67,16 @@ type Config struct {
 func NewClient(ctx context.Context, c Config) *Client {
 	cache := cache.New(60*time.Minute, 120*time.Minute)
 
-	if c.Logger == nil {
-		logger := zerolog.New(io.Discard).With().Timestamp().Logger()
-		c.Logger = &logger
-	}
-
-	// TODO: Get default gotify url from config package function
-	if c.Url == nil || (c.Url != nil && c.Url.String() == "") {
+	if c.Url == nil || (c.Url != nil && c.Url.Hostname() == "") {
 		// if no url is provided, default to localhost
-		c.Logger.Warn().Msg("gotify url is not set. Defaulting to localhost")
-		c.Url = &url.URL{
-			Scheme: "http",
-			Host:   "localhost:80",
-		}
+		parsedURL, _ := url.Parse(config.DefaultURL)
+		c.Url = parsedURL
 	}
 
 	return &Client{
 		serverURL:   c.Url,
 		clientToken: c.ClientToken,
-		logger:      c.Logger,
+		logger:      logger.WithComponent("api"),
 		messages:    c.Messages,
 		errChan:     c.ErrChan,
 		cache:       cache,

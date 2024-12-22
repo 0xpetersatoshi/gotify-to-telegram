@@ -12,6 +12,7 @@ import (
 
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/logger"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/telegram"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -199,6 +200,9 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	p.logger.Info().Msg("validated and setting new config")
 	p.config = pluginCfg
 
+	// TODO: this needs to be handled better
+	// client token doesn't get set properly when updating
+	// and plugin is disabled
 	if p.enabled {
 		// Stop existing goroutines
 		p.cancel()
@@ -230,7 +234,6 @@ func (p *Plugin) updateAPIConfig(ctx context.Context) error {
 	apiConfig := api.Config{
 		Url:         p.config.Settings.GotifyServer.Url,
 		ClientToken: p.config.Settings.GotifyServer.ClientToken,
-		Logger:      p.logger,
 		Messages:    p.messages,
 		ErrChan:     p.errChan,
 	}
@@ -245,7 +248,6 @@ func (p *Plugin) updateAPIConfig(ctx context.Context) error {
 func (p *Plugin) updateTelegramConfig() error {
 	p.logger.Debug().Msg("updating telegram client")
 	p.tgclient = telegram.NewClient(
-		p.logger,
 		p.errChan,
 		p.config.Settings.Telegram.MessageFormatOptions,
 	)
@@ -255,48 +257,40 @@ func (p *Plugin) updateTelegramConfig() error {
 // NewGotifyPluginInstance creates a plugin instance for a user context.
 func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
 	ctx, cancel := context.WithCancel(context.Background())
-	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout}).With().
-		Str("plugin", "gotify-to-telegram").
-		Uint("user_id", userCtx.ID).
-		Str("user_name", userCtx.Name).
-		Bool("is_admin", userCtx.Admin).
-		Caller().
-		Logger()
+	log := logger.Init("gotify-to-telegram", userCtx)
 
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
 
 	cfg, err := config.ParseEnvVars()
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to parse env vars. Using defaults")
+		log.Error().Err(err).Msg("failed to parse env vars. Using defaults")
 		cfg = config.CreateDefaultPluginConfig()
 	}
 
 	logLevel := cfg.Settings.LogOptions.GetZerologLevel()
-	logger = logger.Level(logLevel)
+	logger.UpdateLogLevel(logLevel)
 
 	apiConfig := api.Config{
 		Url:         cfg.Settings.GotifyServer.Url,
 		ClientToken: cfg.Settings.GotifyServer.ClientToken,
-		Logger:      &logger,
 		Messages:    messages,
 		ErrChan:     errChan,
 	}
 	apiclient := api.NewClient(ctx, apiConfig)
 	tgclient := telegram.NewClient(
-		&logger,
 		errChan,
 		cfg.Settings.Telegram.MessageFormatOptions,
 	)
 
-	logger.Debug().Msg("creating plugin instance")
+	log.Debug().Msg("creating plugin instance")
 
 	return &Plugin{
 		userCtx:   userCtx,
 		ctx:       ctx,
 		cancel:    cancel,
 		config:    cfg,
-		logger:    &logger,
+		logger:    log,
 		apiclient: apiclient,
 		tgclient:  tgclient,
 		messages:  messages,

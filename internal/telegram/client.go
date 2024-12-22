@@ -10,6 +10,7 @@ import (
 
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/logger"
 	"github.com/rs/zerolog"
 )
 
@@ -28,9 +29,9 @@ type Client struct {
 }
 
 // NewClient creates a new Telegram client
-func NewClient(logger *zerolog.Logger, errChan chan error, formatOpts config.MessageFormatOptions) *Client {
+func NewClient(errChan chan error, formatOpts config.MessageFormatOptions) *Client {
 	return &Client{
-		logger:           logger,
+		logger:           logger.WithComponent("telegram"),
 		defaultParseMode: formatOpts.ParseMode,
 		httpClient:       &http.Client{},
 		formatOpts:       formatOpts,

@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const defaultURL = "http://localhost:80"
+const DefaultURL = "http://localhost:80"
 
 // Settings represents global plugin settings
 type Settings struct {
@@ -79,7 +79,7 @@ func (g *GotifyServer) URL() *url.URL {
 			g.Url = parsedURL
 		} else {
 			// Fallback to default if parsing fails
-			defaultURL, _ := url.Parse(defaultURL)
+			defaultURL, _ := url.Parse(DefaultURL)
 			g.Url = defaultURL
 		}
 	}
@@ -145,7 +145,7 @@ func (p *Plugin) Validate() error {
 }
 
 func CreateDefaultPluginConfig() *Plugin {
-	URL, _ := url.Parse(defaultURL)
+	URL, _ := url.Parse(DefaultURL)
 	telegram := Telegram{
 		DefaultBotToken: "",
 		DefaultChatIDs:  []string{},
@@ -160,7 +160,7 @@ func CreateDefaultPluginConfig() *Plugin {
 
 	gotifyServer := GotifyServer{
 		Url:         URL,
-		RawUrl:      defaultURL,
+		RawUrl:      DefaultURL,
 		ClientToken: "",
 		Websocket: Websocket{
 			HandshakeTimeout: 10,
@@ -205,7 +205,7 @@ func ParseEnvVars() (*Plugin, error) {
 
 	// Handle invalid URL by setting default
 	if cfg.Settings.GotifyServer.Url.Hostname() == "" {
-		defaultURL, _ := url.Parse(defaultURL)
+		defaultURL, _ := url.Parse(DefaultURL)
 		cfg.Settings.GotifyServer.Url = defaultURL
 	}
 
