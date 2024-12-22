@@ -146,7 +146,7 @@ func formatMessageForTelegram(msg api.Message, formatOpts config.MessageFormatOp
 	}
 
 	// Add any extras if present and not empty
-	if len(msg.Extras) > 0 {
+	if len(msg.Extras) > 0 && formatOpts.IncludeExtras {
 		builder.WriteString("\n\n*Additional Info:*")
 		formatExtras(&builder, msg.Extras, "", logger)
 	}

@@ -33,6 +33,8 @@ type MessageFormatOptions struct {
 	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME" envDefault:"false"`
 	// Whether to include timestamp in message
 	IncludeTimestamp bool `yaml:"include_timestamp" env:"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP" envDefault:"false"`
+	// Whether to include message extras in message
+	IncludeExtras bool `yaml:"include_extras" env:"TG_PLUGIN__MESSAGE_INCLUDE_EXTRAS" envDefault:"false"`
 	// Telegram parse mode (Markdown, MarkdownV2, HTML)
 	ParseMode string `yaml:"parse_mode" env:"TG_PLUGIN__MESSAGE_PARSE_MODE" envDefault:"MarkdownV2"`
 	// Whether to include the message priority in the message
