@@ -148,9 +148,14 @@ func (l *LogOptions) GetZerologLevel() zerolog.Level {
 
 func ParseEnvVars() (*Plugin, error) {
 	cfg := &Plugin{}
-	err := env.Parse(cfg)
-	if err != nil {
+	if err := env.Parse(cfg); err != nil {
 		return nil, err
+	}
+
+	// Handle invalid URL by setting default
+	if cfg.Settings.GotifyServer.Url == nil || cfg.Settings.GotifyServer.Url.Hostname() == "" {
+		defaultURL, _ := url.Parse("http://localhost:80")
+		cfg.Settings.GotifyServer.Url = defaultURL
 	}
 
 	return cfg, nil
