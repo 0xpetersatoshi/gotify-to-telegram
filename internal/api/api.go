@@ -50,7 +50,6 @@ type Client struct {
 	messages    chan<- Message
 	errChan     chan<- error
 	ctx         context.Context
-	cancel      context.CancelFunc
 	mu          sync.Mutex
 	isConnected bool
 }
@@ -64,8 +63,7 @@ type Config struct {
 }
 
 // NewClient creates a new gotify API client
-func NewClient(c Config) *Client {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewClient(ctx context.Context, c Config) *Client {
 	cache := cache.New(60*time.Minute, 120*time.Minute)
 
 	if c.Logger == nil {
@@ -73,6 +71,7 @@ func NewClient(c Config) *Client {
 		c.Logger = &logger
 	}
 
+	// TODO: Get default gotify url from config package function
 	if c.Url == nil || (c.Url != nil && c.Url.String() == "") {
 		// if no url is provided, default to localhost
 		c.Logger.Warn().Msg("gotify url is not set. Defaulting to localhost")
@@ -90,7 +89,6 @@ func NewClient(c Config) *Client {
 		errChan:     c.ErrChan,
 		cache:       cache,
 		ctx:         ctx,
-		cancel:      cancel,
 	}
 }
 
@@ -138,20 +136,30 @@ func (c *Client) connect() error {
 	return nil
 }
 
-// Start starts the gotify API client
+// Start establishes a websocket connection and starts reading incoming messages
 func (c *Client) Start() {
-	c.logger.Debug().Msg("starting gotify API client")
+	c.logger.Info().Msg("starting new gotify websocket connection")
 
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.logger.Info().Msg("context cancelled, shutting down client")
+			c.logger.Debug().
+				Err(c.ctx.Err()).
+				Msg("stopping client...")
 			return
 		default:
 			if err := c.connect(); err != nil {
 				c.logger.Error().Err(err).Msg("failed to connect")
 				select {
 				case <-c.ctx.Done():
+					c.logger.Debug().
+						Err(c.ctx.Err()).
+						Msg("closing websocket connection")
+					if err := c.Close(); err != nil {
+						c.logger.Error().Err(err).Msg("error closing connection")
+						c.errChan <- err
+						return
+					}
 					return
 				case <-time.After(5 * time.Second):
 					continue
@@ -173,14 +181,10 @@ func (c *Client) Start() {
 	}
 }
 
-// Close closes the gotify API connection
+// Close closes the gotify websocket connection
 func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	if c.cancel != nil {
-		c.cancel()
-	}
 
 	if c.conn != nil && c.isConnected {
 		// Send close message
@@ -204,16 +208,13 @@ func (c *Client) Close() error {
 
 // readMessages reads messages received from the gotify server and sends them to the messages channel
 func (c *Client) readMessages() error {
-	// Set read deadline
-	c.conn.SetPongHandler(func(string) error {
-		return c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
+	// Create channels for the reader goroutine
+	msgChan := make(chan Message)
+	errChan := make(chan error)
 
-	for {
-		select {
-		case <-c.ctx.Done():
-			return context.Canceled
-		default:
+	// Start a separate goroutine for reading
+	go func() {
+		for {
 			var msg Message
 			if err := c.conn.ReadJSON(&msg); err != nil {
 				c.mu.Lock()
@@ -221,11 +222,33 @@ func (c *Client) readMessages() error {
 				c.mu.Unlock()
 
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-					return fmt.Errorf("websocket error: %w", err)
+					errChan <- fmt.Errorf("websocket error: %w", err)
+					return
 				}
-				return err
+				errChan <- err
+				return
 			}
+			msgChan <- msg
+		}
+	}()
 
+	c.logger.Info().Msg("listening for new messages")
+	for {
+		select {
+		case <-c.ctx.Done():
+			c.logger.Debug().
+				Err(c.ctx.Err()).
+				Msg("stopping read event loop")
+			// Close the websocket connection to unblock the reader goroutine
+			if err := c.Close(); err != nil {
+				c.logger.Error().Err(err).Msg("error closing websocket connection")
+			}
+			return c.ctx.Err()
+
+		case err := <-errChan:
+			return err
+
+		case msg := <-msgChan:
 			if err := c.processMessage(msg); err != nil {
 				c.logger.Error().Err(err).Msg("failed to process message")
 				continue
@@ -235,6 +258,7 @@ func (c *Client) readMessages() error {
 }
 
 func (c *Client) processMessage(msg Message) error {
+	c.logger.Debug().Msg("processing new message")
 	appItem, found := c.cache.Get(fmt.Sprintf("%d", msg.AppID))
 	if found {
 		app := appItem.(Application)
@@ -252,9 +276,12 @@ func (c *Client) processMessage(msg Message) error {
 
 	select {
 	case <-c.ctx.Done():
+		c.logger.Debug().
+			Err(c.ctx.Err()).
+			Msg("stopping message processing")
 		return c.ctx.Err()
 	case c.messages <- msg:
-		c.logger.Info().Msg("message sent to channel")
+		c.logger.Info().Msg("message sent to message channel")
 	}
 
 	return nil

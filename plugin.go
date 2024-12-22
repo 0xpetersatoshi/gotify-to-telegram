@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -39,12 +40,13 @@ func GetGotifyPluginInfo() plugin.Info {
 type Plugin struct {
 	msgHandler plugin.MessageHandler
 	userCtx    plugin.UserContext
+	ctx        context.Context
+	cancel     context.CancelFunc
 	logger     *zerolog.Logger
 	apiclient  *api.Client
 	tgclient   *telegram.Client
 	config     *config.Plugin
 	messages   chan api.Message
-	done       chan struct{}
 	errChan    chan error
 }
 
@@ -58,23 +60,7 @@ func (p *Plugin) Enable() error {
 // Disable disables the plugin.
 func (p *Plugin) Disable() error {
 	p.logger.Debug().Msg("disabling plugin")
-
-	if p.apiclient != nil {
-		if err := p.apiclient.Close(); err != nil {
-			p.logger.Error().Err(err).Msg("failed to close api client")
-			return err
-		}
-		p.logger.Debug().Msg("api client closed")
-	}
-
-	p.logger.Debug().Msg("sending done signal")
-	p.done <- struct{}{}
-
-	// Drain the done channel
-	select {
-	case <-p.done:
-	default:
-	}
+	p.cancel()
 
 	return nil
 }
@@ -135,20 +121,18 @@ func (p *Plugin) handleMessage(msg api.Message) {
 
 // Start starts the plugin.
 func (p *Plugin) Start() error {
-	p.logger.Debug().Msg("starting plugin")
+	p.logger.Info().Msg("starting plugin services")
 
 	if p.apiclient == nil {
 		p.errChan <- errors.New("api client is not initialized")
 	} else {
-		p.logger.Debug().Msg("api client initialized")
 		go p.apiclient.Start()
 	}
 
-	p.logger.Debug().Msg("starting Telegram client")
 	for {
 		select {
-		case <-p.done:
-			p.logger.Debug().Msg("stopping plugin")
+		case <-p.ctx.Done():
+			p.logger.Info().Msg("stopping services")
 			return nil
 
 		case err := <-p.errChan:
@@ -221,19 +205,20 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		return errors.New("settings.gotify_server.client_token is required")
 	}
 
+	// Stop existing goroutines
+	p.cancel()
+
 	updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
 	p.logger = &updatedLogger
 
-	p.logger.Info().Msg("validating and setting config")
+	p.logger.Info().Msg("validated and setting new config")
 	p.config = pluginCfg
 
-	p.logger.Info().Msg("restarting clients")
-	p.Disable()
+	ctx, cancel := context.WithCancel(context.Background())
+	p.ctx = ctx
+	p.cancel = cancel
 
-	// Reset the done channel
-	p.done = make(chan struct{}, 1)
-
-	if err := p.updateAPIConfig(); err != nil {
+	if err := p.updateAPIConfig(ctx); err != nil {
 		return err
 	}
 
@@ -246,8 +231,8 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	return nil
 }
 
-func (p *Plugin) updateAPIConfig() error {
-	p.logger.Info().Msg("stopping api client")
+func (p *Plugin) updateAPIConfig(ctx context.Context) error {
+	p.logger.Debug().Msg("stopping api client")
 
 	apiConfig := api.Config{
 		Url:         p.config.Settings.GotifyServer.Url,
@@ -257,15 +242,15 @@ func (p *Plugin) updateAPIConfig() error {
 		ErrChan:     p.errChan,
 	}
 
-	p.logger.Info().Msg("creating api client with new config")
-	apiclient := api.NewClient(apiConfig)
+	p.logger.Debug().Msg("creating api client with new config")
+	apiclient := api.NewClient(ctx, apiConfig)
 	p.apiclient = apiclient
 
 	return nil
 }
 
 func (p *Plugin) updateTelegramConfig() error {
-	p.logger.Info().Msg("updating telegram client")
+	p.logger.Debug().Msg("updating telegram client")
 	p.tgclient = telegram.NewClient(
 		p.logger,
 		p.errChan,
@@ -275,16 +260,16 @@ func (p *Plugin) updateTelegramConfig() error {
 }
 
 // NewGotifyPluginInstance creates a plugin instance for a user context.
-func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
+func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
+	ctx, cancel := context.WithCancel(context.Background())
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stdout}).With().
 		Str("plugin", "gotify-to-telegram").
-		Uint("user_id", ctx.ID).
-		Str("user_name", ctx.Name).
-		Bool("is_admin", ctx.Admin).
+		Uint("user_id", userCtx.ID).
+		Str("user_name", userCtx.Name).
+		Bool("is_admin", userCtx.Admin).
 		Caller().
 		Logger()
 
-	done := make(chan struct{}, 1)
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
 
@@ -304,7 +289,7 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 		Messages:    messages,
 		ErrChan:     errChan,
 	}
-	apiclient := api.NewClient(apiConfig)
+	apiclient := api.NewClient(ctx, apiConfig)
 	tgclient := telegram.NewClient(
 		&logger,
 		errChan,
@@ -314,13 +299,14 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 	logger.Debug().Msg("creating plugin instance")
 
 	return &Plugin{
-		userCtx:   ctx,
+		userCtx:   userCtx,
+		ctx:       ctx,
+		cancel:    cancel,
 		config:    cfg,
 		logger:    &logger,
 		apiclient: apiclient,
 		tgclient:  tgclient,
 		messages:  messages,
-		done:      done,
 		errChan:   errChan,
 	}
 }
