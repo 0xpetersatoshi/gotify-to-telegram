@@ -72,7 +72,7 @@ func (p *Plugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
 func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBot {
 	var botName string
 	if p.config != nil {
-		for _, rule := range p.config.Settings.Rules {
+		for _, rule := range p.config.Settings.Telegram.RoutingRules {
 			for _, appid := range rule.AppIDs {
 				if appid == appID {
 					botName = rule.BotName
@@ -188,21 +188,9 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid config type: expected *config.Config, got %T", newConfig)
 	}
-	// Validate Telegram config
-	if pluginCfg.Settings.Telegram.DefaultBotToken == "" {
-		return errors.New("settings.telegram.default_bot_token is required")
-	}
-	if len(pluginCfg.Settings.Telegram.DefaultChatIDs) == 0 {
-		return errors.New("settings.telegram.default_chat_id is required")
-	}
 
-	// Validate Gotify server config
-	if pluginCfg.Settings.GotifyServer.Url == nil || pluginCfg.Settings.GotifyServer.Url.String() == "" {
-		return errors.New("settings.gotify_server.url is required")
-	}
-
-	if pluginCfg.Settings.GotifyServer.ClientToken == "" {
-		return errors.New("settings.gotify_server.client_token is required")
+	if err := pluginCfg.Validate(); err != nil {
+		return err
 	}
 
 	// Stop existing goroutines

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"net/url"
 	"strings"
 
@@ -16,8 +17,6 @@ type Settings struct {
 	GotifyServer GotifyServer `yaml:"gotify_server"`
 	// Telegram settings
 	Telegram Telegram `yaml:"telegram"`
-	// Routing rules for app IDs to Telegram bots
-	Rules []RoutingRule `yaml:"rules"`
 }
 
 // Log options
@@ -29,7 +28,7 @@ type LogOptions struct {
 // Message formatting options
 type MessageFormatOptions struct {
 	// Whether to include app name in message
-	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME" envDefault:"true"`
+	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME" envDefault:"false"`
 	// Whether to include timestamp in message
 	IncludeTimestamp bool `yaml:"include_timestamp" env:"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP" envDefault:"false"`
 	// Telegram parse mode (Markdown, MarkdownV2, HTML)
@@ -52,12 +51,32 @@ type Websocket struct {
 
 // GotifyServer settings
 type GotifyServer struct {
+	// Gotify server in url.URL format
+	Url *url.URL
 	// Gotify server URL
-	Url *url.URL `yaml:"url" env:"TG_PLUGIN__GOTIFY_URL" envDefault:"http://localhost:80"`
+	RawUrl string `yaml:"url" env:"TG_PLUGIN__GOTIFY_URL" envDefault:"http://localhost:80"`
 	// Gotify client token
 	ClientToken string `yaml:"client_token" env:"TG_PLUGIN__GOTIFY_CLIENT_TOKEN" envDefault:""`
 	// Websocket settings
 	Websocket Websocket `yaml:"websocket"`
+}
+
+// parseURL parses the Gotify server URL
+func (g *GotifyServer) parseURL() error {
+	_, err := url.Parse(g.RawUrl)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Url returns the parsed Gotify server URL
+func (g *GotifyServer) URL() *url.URL {
+	if g.Url == nil {
+		parsedURL, _ := url.Parse(g.RawUrl)
+		return parsedURL
+	}
+	return g.Url
 }
 
 // Telegram settings
@@ -68,6 +87,8 @@ type Telegram struct {
 	DefaultChatIDs []string `yaml:"default_chat_ids" env:"TG_PLUGIN__TELEGRAM_DEFAULT_CHAT_IDS" envDefault:""`
 	// Mapping of bot names to bot tokens/chat IDs
 	Bots map[string]TelegramBot `yaml:"bots"`
+	// Gotify app ids to telegram bot routing rules
+	RoutingRules []RoutingRule `yaml:"routing_rules"`
 	// Message formatting options
 	MessageFormatOptions MessageFormatOptions `yaml:"message_format_options"`
 }
@@ -76,7 +97,6 @@ type Telegram struct {
 type TelegramBot struct {
 	// Bot token
 	Token string `yaml:"token" env:"TG_PLUGIN__TELEGRAM_BOT_TOKEN" envDefault:""`
-	// TODO: Ensure env.Parse can handle this
 	// Chat IDs
 	ChatIDs []string `yaml:"chat_ids" env:"TG_PLUGIN__TELEGRAM_CHAT_IDS" envDefault:""`
 }
@@ -94,11 +114,37 @@ type Plugin struct {
 	Settings Settings `yaml:"settings"`
 }
 
+// Validate validates that required fields are set and valid
+func (p *Plugin) Validate() error {
+	if p.Settings.Telegram.DefaultBotToken == "" {
+		return errors.New("settings.telegram.default_bot_token is required")
+	}
+
+	if len(p.Settings.Telegram.DefaultChatIDs) == 0 {
+		return errors.New("settings.telegram.default_chat_ids is required")
+	}
+
+	p.Settings.GotifyServer.Url, _ = url.Parse(p.Settings.GotifyServer.RawUrl)
+
+	if p.Settings.GotifyServer.Url == nil || p.Settings.GotifyServer.Url.Hostname() == "" {
+		return errors.New("settings.gotify_server.url is required")
+	}
+
+	if p.Settings.GotifyServer.ClientToken == "" {
+		return errors.New("settings.gotify_server.client_token is required")
+	}
+
+	return nil
+}
+
 func CreateDefaultPluginConfig() *Plugin {
+	defaultURL := "http://localhost:80"
+	URL, _ := url.Parse(defaultURL)
 	telegram := Telegram{
 		DefaultBotToken: "",
 		DefaultChatIDs:  []string{},
 		Bots:            map[string]TelegramBot{},
+		RoutingRules:    []RoutingRule{},
 		MessageFormatOptions: MessageFormatOptions{
 			IncludeAppName:   true,
 			IncludeTimestamp: false,
@@ -107,10 +153,8 @@ func CreateDefaultPluginConfig() *Plugin {
 	}
 
 	gotifyServer := GotifyServer{
-		Url: &url.URL{
-			Scheme: "http",
-			Host:   "localhost:80",
-		},
+		Url:         URL,
+		RawUrl:      defaultURL,
 		ClientToken: "",
 		Websocket: Websocket{
 			HandshakeTimeout: 10,
@@ -122,7 +166,6 @@ func CreateDefaultPluginConfig() *Plugin {
 	settings := Settings{
 		LogOptions:   LogOptions{LogLevel: "info"},
 		Telegram:     telegram,
-		Rules:        []RoutingRule{},
 		GotifyServer: gotifyServer,
 	}
 	return &Plugin{
@@ -152,8 +195,10 @@ func ParseEnvVars() (*Plugin, error) {
 		return nil, err
 	}
 
+	cfg.Settings.GotifyServer.Url = cfg.Settings.GotifyServer.URL()
+
 	// Handle invalid URL by setting default
-	if cfg.Settings.GotifyServer.Url == nil || cfg.Settings.GotifyServer.Url.Hostname() == "" {
+	if cfg.Settings.GotifyServer.Url.Hostname() == "" {
 		defaultURL, _ := url.Parse("http://localhost:80")
 		cfg.Settings.GotifyServer.Url = defaultURL
 	}
