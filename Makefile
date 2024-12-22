@@ -54,7 +54,7 @@ move-plugin-arm64: create-plugin-dir build-linux-arm64
 
 setup-gotify: compose-up
 	@echo "Waiting for Gotify to start..."
-	@sleep 7
+	@sleep 10
 	$(eval NEW_TOKEN := $(shell curl -s -f -X POST \
 		-u admin:admin \
 		-H "Content-Type: application/json" \

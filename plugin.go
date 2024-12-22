@@ -38,6 +38,7 @@ func GetGotifyPluginInfo() plugin.Info {
 
 // Plugin is the gotify plugin instance.
 type Plugin struct {
+	enabled    bool
 	msgHandler plugin.MessageHandler
 	userCtx    plugin.UserContext
 	ctx        context.Context
@@ -52,6 +53,7 @@ type Plugin struct {
 
 // Enable enables the plugin.
 func (p *Plugin) Enable() error {
+	p.enabled = true
 	p.logger.Info().Msg("enabling plugin")
 	go p.Start()
 	return nil
@@ -59,6 +61,7 @@ func (p *Plugin) Enable() error {
 
 // Disable disables the plugin.
 func (p *Plugin) Disable() error {
+	p.enabled = false
 	p.logger.Debug().Msg("disabling plugin")
 	p.cancel()
 
@@ -193,28 +196,30 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		return err
 	}
 
-	// Stop existing goroutines
-	p.cancel()
-
-	updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
-	p.logger = &updatedLogger
-
 	p.logger.Info().Msg("validated and setting new config")
 	p.config = pluginCfg
 
-	ctx, cancel := context.WithCancel(context.Background())
-	p.ctx = ctx
-	p.cancel = cancel
+	if p.enabled {
+		// Stop existing goroutines
+		p.cancel()
 
-	if err := p.updateAPIConfig(ctx); err != nil {
-		return err
+		updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
+		p.logger = &updatedLogger
+
+		ctx, cancel := context.WithCancel(context.Background())
+		p.ctx = ctx
+		p.cancel = cancel
+
+		if err := p.updateAPIConfig(ctx); err != nil {
+			return err
+		}
+
+		if err := p.updateTelegramConfig(); err != nil {
+			return err
+		}
+
+		go p.Start()
 	}
-
-	if err := p.updateTelegramConfig(); err != nil {
-		return err
-	}
-
-	go p.Start()
 
 	return nil
 }
