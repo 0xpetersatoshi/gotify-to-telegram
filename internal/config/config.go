@@ -98,7 +98,7 @@ type TelegramBot struct {
 	// Chat IDs
 	ChatIDs []string `yaml:"chat_ids"`
 	// Gotify app ids
-	AppIDs []uint32 `yaml:"app_ids"`
+	AppIDs []uint32 `yaml:"gotify_app_ids"`
 	// Bot message formatting options
 	MessageFormatOptions *MessageFormatOptions `yaml:"message_format_options"`
 }
