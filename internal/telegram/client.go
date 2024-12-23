@@ -21,21 +21,17 @@ type Payload struct {
 }
 
 type Client struct {
-	logger           *zerolog.Logger
-	defaultParseMode string
-	httpClient       *http.Client
-	formatOpts       config.MessageFormatOptions
-	errChan          chan error
+	logger     *zerolog.Logger
+	httpClient *http.Client
+	errChan    chan error
 }
 
 // NewClient creates a new Telegram client
-func NewClient(errChan chan error, formatOpts config.MessageFormatOptions) *Client {
+func NewClient(errChan chan error) *Client {
 	return &Client{
-		logger:           logger.WithComponent("telegram"),
-		defaultParseMode: formatOpts.ParseMode,
-		httpClient:       &http.Client{},
-		formatOpts:       formatOpts,
-		errChan:          errChan,
+		logger:     logger.WithComponent("telegram"),
+		httpClient: &http.Client{},
+		errChan:    errChan,
 	}
 }
 
@@ -44,7 +40,7 @@ func (c *Client) buildBotEndpoint(token string) string {
 }
 
 // Send sends a message to Telegram
-func (c *Client) Send(message api.Message, token, chatID string) {
+func (c *Client) Send(message api.Message, token, chatID string, formatOpts config.MessageFormatOptions) {
 	if token == "" {
 		c.errChan <- fmt.Errorf("telegram bot token is empty")
 		return
@@ -60,12 +56,12 @@ func (c *Client) Send(message api.Message, token, chatID string) {
 		Str("chat_id", chatID).
 		Msg("preparing to send message to Telegram")
 
-	formattedMessage := formatMessageForTelegram(message, c.formatOpts, c.logger)
+	formattedMessage := formatMessageForTelegram(message, formatOpts, c.logger)
 
 	payload := Payload{
 		ChatID:    chatID,
 		Text:      formattedMessage,
-		ParseMode: c.defaultParseMode,
+		ParseMode: formatOpts.ParseMode,
 	}
 
 	body, err := json.Marshal(payload)

@@ -144,9 +144,6 @@ func TestCreateDefaultPluginConfig(t *testing.T) {
 	assert.Equal(t, "MarkdownV2", cfg.Settings.Telegram.MessageFormatOptions.ParseMode)
 	assert.False(t, cfg.Settings.Telegram.MessageFormatOptions.IncludePriority)
 	assert.Equal(t, 0, cfg.Settings.Telegram.MessageFormatOptions.PriorityThreshold)
-
-	// Test Rules defaults
-	assert.Empty(t, cfg.Settings.Telegram.RoutingRules)
 }
 
 func TestLogOptionsStruct_GetZerologLevel(t *testing.T) {

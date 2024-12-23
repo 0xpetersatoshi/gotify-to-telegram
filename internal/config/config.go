@@ -96,10 +96,8 @@ type Telegram struct {
 	DefaultChatIDs []string `yaml:"default_chat_ids" env:"TG_PLUGIN__TELEGRAM_DEFAULT_CHAT_IDS" envDefault:""`
 	// Mapping of bot names to bot tokens/chat IDs
 	Bots map[string]TelegramBot `yaml:"bots"`
-	// Gotify app ids to telegram bot routing rules
-	RoutingRules []RoutingRule `yaml:"routing_rules"`
 	// Message formatting options
-	MessageFormatOptions MessageFormatOptions `yaml:"message_format_options"`
+	MessageFormatOptions MessageFormatOptions `yaml:"default_message_format_options"`
 }
 
 // TelegramBot settings
@@ -108,14 +106,10 @@ type TelegramBot struct {
 	Token string `yaml:"token" env:"TG_PLUGIN__TELEGRAM_BOT_TOKEN" envDefault:""`
 	// Chat IDs
 	ChatIDs []string `yaml:"chat_ids" env:"TG_PLUGIN__TELEGRAM_CHAT_IDS" envDefault:""`
-}
-
-// Telegram routing rule
-type RoutingRule struct {
-	// List of Gotify App IDs
+	// Gotify app ids
 	AppIDs []uint32 `yaml:"app_ids"`
-	// Telegram bot name
-	BotName string `yaml:"bot_name"` // References a bot in the bots config
+	// Bot message formatting options
+	MessageFormatOptions *MessageFormatOptions `yaml:"message_format_options"`
 }
 
 // Plugin settings
@@ -152,7 +146,6 @@ func CreateDefaultPluginConfig() *Plugin {
 		DefaultBotToken: "",
 		DefaultChatIDs:  []string{},
 		Bots:            map[string]TelegramBot{},
-		RoutingRules:    []RoutingRule{},
 		MessageFormatOptions: MessageFormatOptions{
 			IncludeAppName:   true,
 			IncludeTimestamp: false,

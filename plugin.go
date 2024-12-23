@@ -74,34 +74,23 @@ func (p *Plugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
 }
 
 func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBot {
-	var botName string
 	if p.config != nil {
-		for _, rule := range p.config.Settings.Telegram.RoutingRules {
-			for _, appid := range rule.AppIDs {
+		for _, bot := range p.config.Settings.Telegram.Bots {
+			for _, appid := range bot.AppIDs {
 				if appid == appID {
-					botName = rule.BotName
+					return bot
 				}
 			}
 		}
 	}
 
-	botConfig, exists := p.config.Settings.Telegram.Bots[botName]
-	if exists {
-		p.logger.Debug().
-			Uint32("app_id", appID).
-			Str("bot_name", botName).
-			Msg("rule found for app_id")
-		return botConfig
-	} else {
-		// Fallback to default if no rule matches
-		p.logger.Warn().
-			Uint32("app_id", appID).
-			Str("bot_name", botName).
-			Msgf("no rule found for app_id: %d. Using default config", appID)
-		return config.TelegramBot{
-			Token:   p.config.Settings.Telegram.DefaultBotToken,
-			ChatIDs: p.config.Settings.Telegram.DefaultChatIDs,
-		}
+	// Fallback to default if app id not found for bot config
+	p.logger.Warn().
+		Uint32("app_id", appID).
+		Msgf("no rule found for app_id: %d. Using default config", appID)
+	return config.TelegramBot{
+		Token:   p.config.Settings.Telegram.DefaultBotToken,
+		ChatIDs: p.config.Settings.Telegram.DefaultChatIDs,
 	}
 }
 
@@ -112,6 +101,9 @@ func (p *Plugin) handleMessage(msg api.Message) {
 		Msg("handling message")
 
 	config := p.getTelegramBotConfigForAppID(msg.AppID)
+	if config.MessageFormatOptions == nil {
+		config.MessageFormatOptions = &p.config.Settings.Telegram.MessageFormatOptions
+	}
 
 	p.logger.Debug().
 		Str("bot_token", utils.MaskToken(config.Token)).
@@ -119,7 +111,7 @@ func (p *Plugin) handleMessage(msg api.Message) {
 		Msg("using telegram config")
 
 	for _, chatID := range config.ChatIDs {
-		go p.tgclient.Send(msg, config.Token, chatID)
+		go p.tgclient.Send(msg, config.Token, chatID, *config.MessageFormatOptions)
 	}
 }
 
@@ -247,10 +239,7 @@ func (p *Plugin) updateAPIConfig(ctx context.Context) error {
 
 func (p *Plugin) updateTelegramConfig() error {
 	p.logger.Debug().Msg("updating telegram client")
-	p.tgclient = telegram.NewClient(
-		p.errChan,
-		p.config.Settings.Telegram.MessageFormatOptions,
-	)
+	p.tgclient = telegram.NewClient(p.errChan)
 	return nil
 }
 
@@ -278,10 +267,7 @@ func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
 		ErrChan:     errChan,
 	}
 	apiclient := api.NewClient(ctx, apiConfig)
-	tgclient := telegram.NewClient(
-		errChan,
-		cfg.Settings.Telegram.MessageFormatOptions,
-	)
+	tgclient := telegram.NewClient(errChan)
 
 	log.Debug().Msg("creating plugin instance")
 
