@@ -167,10 +167,14 @@ func (p *Plugin) GetDisplay(location *url.URL) string {
 // The default configuration will be provided to the user for future editing. Also used for Unmarshaling.
 // Invoked whenever an unmarshaling is required.
 func (p *Plugin) DefaultConfig() interface{} {
-	cfg, err := config.ParseEnvVars()
-	if err != nil {
-		p.logger.Error().Err(err).Msg("failed to parse env vars. Using defaults")
-		cfg = config.CreateDefaultPluginConfig()
+	cfg := config.CreateDefaultPluginConfig()
+
+	if err := config.MergeWithEnvVars(cfg); err != nil {
+		p.logger.Error().Err(err).Msg("failed to merge with env vars")
+	}
+
+	if err := cfg.Validate(); err != nil {
+		p.logger.Error().Err(err).Msg("failed to validate default config")
 	}
 
 	return cfg
@@ -189,31 +193,40 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		return err
 	}
 
+	// Env vars take precedence over yaml config
+	if err := config.MergeWithEnvVars(pluginCfg); err != nil {
+		return err
+	}
+
+	// re-validate after merging with env vars
+	if err := pluginCfg.Validate(); err != nil {
+		return err
+	}
+
 	p.logger.Info().Msg("validated and setting new config")
 	p.config = pluginCfg
 
-	// TODO: this needs to be handled better
-	// client token doesn't get set properly when updating
-	// and plugin is disabled
 	if p.enabled {
 		// Stop existing goroutines
 		p.cancel()
+	}
 
-		updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
-		p.logger = &updatedLogger
+	updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
+	p.logger = &updatedLogger
 
-		ctx, cancel := context.WithCancel(context.Background())
-		p.ctx = ctx
-		p.cancel = cancel
+	ctx, cancel := context.WithCancel(context.Background())
+	p.ctx = ctx
+	p.cancel = cancel
 
-		if err := p.updateAPIConfig(ctx); err != nil {
-			return err
-		}
+	if err := p.updateAPIConfig(ctx); err != nil {
+		return err
+	}
 
-		if err := p.updateTelegramConfig(); err != nil {
-			return err
-		}
+	if err := p.updateTelegramConfig(); err != nil {
+		return err
+	}
 
+	if p.enabled {
 		go p.Start()
 	}
 

@@ -103,9 +103,9 @@ type Telegram struct {
 // TelegramBot settings
 type TelegramBot struct {
 	// Bot token
-	Token string `yaml:"token" env:"TG_PLUGIN__TELEGRAM_BOT_TOKEN" envDefault:""`
+	Token string `yaml:"token"`
 	// Chat IDs
-	ChatIDs []string `yaml:"chat_ids" env:"TG_PLUGIN__TELEGRAM_CHAT_IDS" envDefault:""`
+	ChatIDs []string `yaml:"chat_ids"`
 	// Gotify app ids
 	AppIDs []uint32 `yaml:"app_ids"`
 	// Bot message formatting options
@@ -142,12 +142,32 @@ func (p *Plugin) Validate() error {
 
 func CreateDefaultPluginConfig() *Plugin {
 	URL, _ := url.Parse(DefaultURL)
+	bot := TelegramBot{
+		Token: "example_token",
+		ChatIDs: []string{
+			"123456789",
+			"987654321",
+		},
+		AppIDs: []uint32{
+			123456789,
+			987654321,
+		},
+		MessageFormatOptions: &MessageFormatOptions{
+			IncludeAppName:   false,
+			IncludeTimestamp: true,
+			ParseMode:        "MarkdownV2",
+		},
+	}
+
+	botMap := make(map[string]TelegramBot)
+	botMap["example_bot"] = bot
+
 	telegram := Telegram{
 		DefaultBotToken: "",
 		DefaultChatIDs:  []string{},
-		Bots:            map[string]TelegramBot{},
+		Bots:            botMap,
 		MessageFormatOptions: MessageFormatOptions{
-			IncludeAppName:   true,
+			IncludeAppName:   false,
 			IncludeTimestamp: false,
 			ParseMode:        "MarkdownV2",
 		},
@@ -205,4 +225,52 @@ func ParseEnvVars() (*Plugin, error) {
 	}
 
 	return cfg, nil
+}
+
+// MergeWithEnvVars applies environment variable values over the existing config
+func MergeWithEnvVars(cfg *Plugin) error {
+	// Create a new config from env vars
+	envConfig, err := ParseEnvVars()
+	if err != nil {
+		return err
+	}
+
+	// Only override non-zero/non-empty values from environment
+	if envConfig.Settings.LogOptions.LogLevel != "" {
+		cfg.Settings.LogOptions.LogLevel = envConfig.Settings.LogOptions.LogLevel
+	}
+
+	// Gotify server settings
+	if envConfig.Settings.GotifyServer.RawUrl != DefaultURL {
+		cfg.Settings.GotifyServer.RawUrl = envConfig.Settings.GotifyServer.RawUrl
+		cfg.Settings.GotifyServer.Url = cfg.Settings.GotifyServer.URL()
+	}
+	if envConfig.Settings.GotifyServer.ClientToken != "" {
+		cfg.Settings.GotifyServer.ClientToken = envConfig.Settings.GotifyServer.ClientToken
+	}
+
+	// Telegram settings
+	if envConfig.Settings.Telegram.DefaultBotToken != "" {
+		cfg.Settings.Telegram.DefaultBotToken = envConfig.Settings.Telegram.DefaultBotToken
+	}
+	if len(envConfig.Settings.Telegram.DefaultChatIDs) > 0 {
+		cfg.Settings.Telegram.DefaultChatIDs = envConfig.Settings.Telegram.DefaultChatIDs
+	}
+
+	// Message format options
+	opts := &cfg.Settings.Telegram.MessageFormatOptions
+	envOpts := &envConfig.Settings.Telegram.MessageFormatOptions
+
+	opts.IncludeAppName = envOpts.IncludeAppName
+	opts.IncludeTimestamp = envOpts.IncludeTimestamp
+	opts.IncludeExtras = envOpts.IncludeExtras
+	if envOpts.ParseMode != "" {
+		opts.ParseMode = envOpts.ParseMode
+	}
+	opts.IncludePriority = envOpts.IncludePriority
+	if envOpts.PriorityThreshold != 0 {
+		opts.PriorityThreshold = envOpts.PriorityThreshold
+	}
+
+	return nil
 }
