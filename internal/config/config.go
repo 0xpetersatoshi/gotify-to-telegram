@@ -65,15 +65,6 @@ type GotifyServer struct {
 	Websocket Websocket `yaml:"websocket"`
 }
 
-// parseURL parses the Gotify server URL
-func (g *GotifyServer) parseURL() error {
-	_, err := url.Parse(g.RawUrl)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 // Url returns the parsed Gotify server URL
 func (g *GotifyServer) URL() *url.URL {
 	if g.Url == nil {

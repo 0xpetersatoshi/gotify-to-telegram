@@ -125,6 +125,26 @@ func TestCreateDefaultPluginConfig(t *testing.T) {
 		Scheme: "http",
 		Host:   "localhost:80",
 	}
+
+	exampleBot := &TelegramBot{
+		Token: "example_token",
+		ChatIDs: []string{
+			"123456789",
+			"987654321",
+		},
+		AppIDs: []uint32{
+			123456789,
+			987654321,
+		},
+		MessageFormatOptions: &MessageFormatOptions{
+			IncludeAppName:   false,
+			IncludeTimestamp: true,
+			ParseMode:        "MarkdownV2",
+		},
+	}
+	expectedBotMap := make(map[string]TelegramBot)
+	expectedBotMap["example_bot"] = *exampleBot
+
 	assert.Equal(t, expectedURL.String(), cfg.Settings.GotifyServer.Url.String())
 	assert.Equal(t, "", cfg.Settings.GotifyServer.ClientToken)
 
@@ -136,10 +156,10 @@ func TestCreateDefaultPluginConfig(t *testing.T) {
 	// Test Telegram defaults
 	assert.Equal(t, "", cfg.Settings.Telegram.DefaultBotToken)
 	assert.Empty(t, cfg.Settings.Telegram.DefaultChatIDs)
-	assert.Empty(t, cfg.Settings.Telegram.Bots)
+	assert.Equal(t, expectedBotMap, cfg.Settings.Telegram.Bots)
 
 	// Test MessageFormatOptions defaults
-	assert.True(t, cfg.Settings.Telegram.MessageFormatOptions.IncludeAppName)
+	assert.False(t, cfg.Settings.Telegram.MessageFormatOptions.IncludeAppName)
 	assert.False(t, cfg.Settings.Telegram.MessageFormatOptions.IncludeTimestamp)
 	assert.Equal(t, "MarkdownV2", cfg.Settings.Telegram.MessageFormatOptions.ParseMode)
 	assert.False(t, cfg.Settings.Telegram.MessageFormatOptions.IncludePriority)
@@ -253,6 +273,159 @@ func TestConfig_URLHandling(t *testing.T) {
 			parsedURL := cfg.Settings.GotifyServer.Url
 			assert.Equal(t, tt.wantHost, parsedURL.Hostname())
 			assert.Equal(t, tt.wantPort, parsedURL.Port())
+		})
+	}
+}
+
+func TestMergeWithEnvVars(t *testing.T) {
+	tests := []struct {
+		name    string
+		envVars map[string]string
+		initial *Plugin
+		verify  func(*testing.T, *Plugin)
+	}{
+		{
+			name: "override all possible values",
+			envVars: map[string]string{
+				"TG_PLUGIN__LOG_LEVEL":                  "debug",
+				"TG_PLUGIN__GOTIFY_URL":                 "http://new.example.com",
+				"TG_PLUGIN__GOTIFY_CLIENT_TOKEN":        "new-token",
+				"TG_PLUGIN__TELEGRAM_DEFAULT_BOT_TOKEN": "new-bot-token",
+				"TG_PLUGIN__TELEGRAM_DEFAULT_CHAT_IDS":  "111,222",
+				"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME":   "true",
+				"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP":  "true",
+				"TG_PLUGIN__MESSAGE_PARSE_MODE":         "HTML",
+				"TG_PLUGIN__MESSAGE_INCLUDE_PRIORITY":   "true",
+				"TG_PLUGIN__MESSAGE_PRIORITY_THRESHOLD": "5",
+			},
+			initial: CreateDefaultPluginConfig(),
+			verify: func(t *testing.T, p *Plugin) {
+				assert.Equal(t, "debug", p.Settings.LogOptions.LogLevel)
+				assert.Equal(t, "http://new.example.com", p.Settings.GotifyServer.RawUrl)
+				assert.Equal(t, "new-token", p.Settings.GotifyServer.ClientToken)
+				assert.Equal(t, "new-bot-token", p.Settings.Telegram.DefaultBotToken)
+				assert.Equal(t, []string{"111", "222"}, p.Settings.Telegram.DefaultChatIDs)
+				assert.True(t, p.Settings.Telegram.MessageFormatOptions.IncludeAppName)
+				assert.True(t, p.Settings.Telegram.MessageFormatOptions.IncludeTimestamp)
+				assert.Equal(t, "HTML", p.Settings.Telegram.MessageFormatOptions.ParseMode)
+				assert.True(t, p.Settings.Telegram.MessageFormatOptions.IncludePriority)
+				assert.Equal(t, 5, p.Settings.Telegram.MessageFormatOptions.PriorityThreshold)
+			},
+		},
+		{
+			name:    "no environment variables set",
+			envVars: map[string]string{},
+			initial: CreateDefaultPluginConfig(),
+			verify: func(t *testing.T, p *Plugin) {
+				// Should maintain default values
+				assert.Equal(t, "info", p.Settings.LogOptions.LogLevel)
+				assert.Equal(t, DefaultURL, p.Settings.GotifyServer.RawUrl)
+				assert.Equal(t, "", p.Settings.GotifyServer.ClientToken)
+				assert.Equal(t, "", p.Settings.Telegram.DefaultBotToken)
+				assert.Empty(t, p.Settings.Telegram.DefaultChatIDs)
+			},
+		},
+		{
+			name: "partial override",
+			envVars: map[string]string{
+				"TG_PLUGIN__LOG_LEVEL":                  "error",
+				"TG_PLUGIN__TELEGRAM_DEFAULT_BOT_TOKEN": "partial-token",
+			},
+			initial: CreateDefaultPluginConfig(),
+			verify: func(t *testing.T, p *Plugin) {
+				assert.Equal(t, "error", p.Settings.LogOptions.LogLevel)
+				assert.Equal(t, "partial-token", p.Settings.Telegram.DefaultBotToken)
+				// Other values should remain default
+				assert.Equal(t, DefaultURL, p.Settings.GotifyServer.RawUrl)
+				assert.Empty(t, p.Settings.Telegram.DefaultChatIDs)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear any existing env vars
+			os.Clearenv()
+
+			// Set test environment variables
+			for k, v := range tt.envVars {
+				err := os.Setenv(k, v)
+				assert.NoError(t, err)
+			}
+
+			// Run merge
+			err := MergeWithEnvVars(tt.initial)
+			assert.NoError(t, err)
+
+			// Verify results
+			tt.verify(t, tt.initial)
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *Plugin
+		wantError string
+	}{
+		{
+			name:      "empty config",
+			config:    &Plugin{},
+			wantError: "settings.telegram.default_bot_token is required",
+		},
+		{
+			name: "missing default chat IDs",
+			config: &Plugin{
+				Settings: Settings{
+					Telegram: Telegram{
+						DefaultBotToken: "token",
+					},
+				},
+			},
+			wantError: "settings.telegram.default_chat_ids is required",
+		},
+		{
+			name: "missing client token",
+			config: &Plugin{
+				Settings: Settings{
+					Telegram: Telegram{
+						DefaultBotToken: "token",
+						DefaultChatIDs:  []string{"123"},
+					},
+					GotifyServer: GotifyServer{
+						RawUrl: "http://valid.com",
+					},
+				},
+			},
+			wantError: "settings.gotify_server.client_token is required",
+		},
+		{
+			name: "valid config",
+			config: &Plugin{
+				Settings: Settings{
+					Telegram: Telegram{
+						DefaultBotToken: "token",
+						DefaultChatIDs:  []string{"123"},
+					},
+					GotifyServer: GotifyServer{
+						RawUrl:      "http://valid.com",
+						ClientToken: "client-token",
+					},
+				},
+			},
+			wantError: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantError != "" {
+				assert.EqualError(t, err, tt.wantError)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
