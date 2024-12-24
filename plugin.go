@@ -169,8 +169,10 @@ func (p *Plugin) GetDisplay(location *url.URL) string {
 func (p *Plugin) DefaultConfig() interface{} {
 	cfg := config.CreateDefaultPluginConfig()
 
-	if err := config.MergeWithEnvVars(cfg); err != nil {
-		p.logger.Error().Err(err).Msg("failed to merge with env vars")
+	if !cfg.Settings.IgnoreEnvVars {
+		if err := config.MergeWithEnvVars(cfg); err != nil {
+			p.logger.Error().Err(err).Msg("failed to merge with env vars")
+		}
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -193,14 +195,16 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		return err
 	}
 
-	// Env vars take precedence over yaml config
-	if err := config.MergeWithEnvVars(pluginCfg); err != nil {
-		return err
-	}
+	if !pluginCfg.Settings.IgnoreEnvVars {
+		// Env vars take precedence over yaml config
+		if err := config.MergeWithEnvVars(pluginCfg); err != nil {
+			return err
+		}
 
-	// re-validate after merging with env vars
-	if err := pluginCfg.Validate(); err != nil {
-		return err
+		// re-validate after merging with env vars
+		if err := pluginCfg.Validate(); err != nil {
+			return err
+		}
 	}
 
 	p.logger.Info().Msg("validated and setting new config")

@@ -176,6 +176,74 @@ func TestPluginStruct_ValidateAndSetConfig(t *testing.T) {
 			wantError:     false,
 			validateCalls: 1,
 		},
+		{
+			name: "should create a config where the env vars are ignored",
+			userConfig: &config.Plugin{
+				Settings: config.Settings{
+					IgnoreEnvVars: true,
+					LogOptions: config.LogOptions{
+						LogLevel: "info",
+					},
+					Telegram: config.Telegram{
+						DefaultBotToken: "user-provided-token",
+						DefaultChatIDs:  []string{"chat123", "chat456"},
+						Bots: map[string]config.TelegramBot{
+							"bot1": {
+								Token:   "bot1-token",
+								ChatIDs: []string{"chat123", "chat456"},
+								AppIDs:  []uint32{1, 2},
+							},
+							"bot2": {
+								Token:   "bot2-token",
+								ChatIDs: []string{"chat789"},
+								AppIDs:  []uint32{3, 4},
+							},
+						},
+					},
+					GotifyServer: config.GotifyServer{
+						RawUrl:      "http://mydomain.com",
+						ClientToken: "token123",
+					},
+				},
+			},
+			wantConfig: &config.Plugin{
+				Settings: config.Settings{
+					IgnoreEnvVars: true,
+					LogOptions: config.LogOptions{
+						LogLevel: "info",
+					},
+					Telegram: config.Telegram{
+						DefaultBotToken: "user-provided-token",
+						DefaultChatIDs:  []string{"chat123", "chat456"},
+						Bots: map[string]config.TelegramBot{
+							"bot1": {
+								Token:   "bot1-token",
+								ChatIDs: []string{"chat123", "chat456"},
+								AppIDs:  []uint32{1, 2},
+							},
+							"bot2": {
+								Token:   "bot2-token",
+								ChatIDs: []string{"chat789"},
+								AppIDs:  []uint32{3, 4},
+							},
+						},
+					},
+					GotifyServer: config.GotifyServer{
+						RawUrl:      "http://mydomain.com",
+						ClientToken: "token123",
+					},
+				},
+			},
+			envVars: map[string]string{
+				"TG_PLUGIN__LOG_LEVEL":                  "debug",
+				"TG_PLUGIN__GOTIFY_URL":                 "http://example.com",
+				"TG_PLUGIN__GOTIFY_CLIENT_TOKEN":        "token123",
+				"TG_PLUGIN__TELEGRAM_DEFAULT_BOT_TOKEN": "bot123",
+				"TG_PLUGIN__TELEGRAM_DEFAULT_CHAT_IDS":  "chat1,chat2",
+			},
+			wantError:     false,
+			validateCalls: 1,
+		},
 	}
 
 	for _, tt := range tests {

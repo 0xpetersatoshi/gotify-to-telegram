@@ -13,6 +13,8 @@ const DefaultURL = "http://localhost:80"
 
 // Settings represents global plugin settings
 type Settings struct {
+	// Ignores env variables when true
+	IgnoreEnvVars bool `yaml:"ignore_env_vars"`
 	// Log options
 	LogOptions LogOptions `yaml:"log_options"`
 	// Gotify server settings
