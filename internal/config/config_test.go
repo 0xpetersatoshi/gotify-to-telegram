@@ -55,8 +55,6 @@ func TestParseEnvVars(t *testing.T) {
 	assert.Equal(t, expectedURL, cfg.Settings.GotifyServer.Url)
 	assert.Equal(t, "some-client-token", cfg.Settings.GotifyServer.ClientToken)
 	assert.Equal(t, 15, cfg.Settings.GotifyServer.Websocket.HandshakeTimeout)
-	assert.Equal(t, 45, cfg.Settings.GotifyServer.Websocket.PingInterval)
-	assert.Equal(t, 90, cfg.Settings.GotifyServer.Websocket.PongWait)
 
 	// Telegram
 	assert.Equal(t, "default-bot-token", cfg.Settings.Telegram.DefaultBotToken)
@@ -102,8 +100,6 @@ func TestParseEnvVars_DefaultValues(t *testing.T) {
 	assert.Equal(t, "http://localhost:80", cfg.Settings.GotifyServer.Url.String())
 	assert.Equal(t, "", cfg.Settings.GotifyServer.ClientToken)
 	assert.Equal(t, 10, cfg.Settings.GotifyServer.Websocket.HandshakeTimeout)
-	assert.Equal(t, 30, cfg.Settings.GotifyServer.Websocket.PingInterval)
-	assert.Equal(t, 60, cfg.Settings.GotifyServer.Websocket.PongWait)
 	assert.Equal(t, "", cfg.Settings.Telegram.DefaultBotToken)
 	assert.Empty(t, cfg.Settings.Telegram.DefaultChatIDs)
 	assert.False(t, cfg.Settings.Telegram.MessageFormatOptions.IncludeAppName)
@@ -150,8 +146,6 @@ func TestCreateDefaultPluginConfig(t *testing.T) {
 
 	// Test Websocket defaults
 	assert.Equal(t, 10, cfg.Settings.GotifyServer.Websocket.HandshakeTimeout)
-	assert.Equal(t, 30, cfg.Settings.GotifyServer.Websocket.PingInterval)
-	assert.Equal(t, 60, cfg.Settings.GotifyServer.Websocket.PongWait)
 
 	// Test Telegram defaults
 	assert.Equal(t, "", cfg.Settings.Telegram.DefaultBotToken)

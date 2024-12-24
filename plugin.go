@@ -241,10 +241,11 @@ func (p *Plugin) updateAPIConfig(ctx context.Context) error {
 	p.logger.Debug().Msg("stopping api client")
 
 	apiConfig := api.Config{
-		Url:         p.config.Settings.GotifyServer.Url,
-		ClientToken: p.config.Settings.GotifyServer.ClientToken,
-		Messages:    p.messages,
-		ErrChan:     p.errChan,
+		Url:              p.config.Settings.GotifyServer.Url,
+		ClientToken:      p.config.Settings.GotifyServer.ClientToken,
+		HandshakeTimeout: p.config.Settings.GotifyServer.Websocket.HandshakeTimeout,
+		Messages:         p.messages,
+		ErrChan:          p.errChan,
 	}
 
 	p.logger.Debug().Msg("creating api client with new config")
@@ -278,10 +279,11 @@ func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
 	logger.UpdateLogLevel(logLevel)
 
 	apiConfig := api.Config{
-		Url:         cfg.Settings.GotifyServer.Url,
-		ClientToken: cfg.Settings.GotifyServer.ClientToken,
-		Messages:    messages,
-		ErrChan:     errChan,
+		Url:              cfg.Settings.GotifyServer.Url,
+		ClientToken:      cfg.Settings.GotifyServer.ClientToken,
+		HandshakeTimeout: cfg.Settings.GotifyServer.Websocket.HandshakeTimeout,
+		Messages:         messages,
+		ErrChan:          errChan,
 	}
 	apiclient := api.NewClient(ctx, apiConfig)
 	tgclient := telegram.NewClient(errChan)

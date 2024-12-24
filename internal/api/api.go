@@ -44,23 +44,25 @@ type Application struct {
 
 // Client is a gotify API client
 type Client struct {
-	serverURL   *url.URL
-	clientToken string
-	conn        *websocket.Conn
-	logger      *zerolog.Logger
-	cache       *cache.Cache
-	messages    chan<- Message
-	errChan     chan<- error
-	ctx         context.Context
-	mu          sync.Mutex
-	isConnected bool
+	serverURL        *url.URL
+	clientToken      string
+	conn             *websocket.Conn
+	logger           *zerolog.Logger
+	cache            *cache.Cache
+	messages         chan<- Message
+	errChan          chan<- error
+	ctx              context.Context
+	mu               sync.Mutex
+	isConnected      bool
+	handshakeTimeout int
 }
 
 type Config struct {
-	Url         *url.URL
-	ClientToken string
-	Messages    chan<- Message
-	ErrChan     chan<- error
+	Url              *url.URL
+	ClientToken      string
+	HandshakeTimeout int
+	Messages         chan<- Message
+	ErrChan          chan<- error
 }
 
 // NewClient creates a new gotify API client
@@ -109,7 +111,7 @@ func (c *Client) connect() error {
 	endpoint := protocol + c.serverURL.Host + "/stream?token=" + c.clientToken
 
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
+		HandshakeTimeout: time.Duration(c.handshakeTimeout) * time.Second,
 	}
 
 	conn, _, err := dialer.DialContext(c.ctx, endpoint, nil)

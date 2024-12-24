@@ -49,10 +49,6 @@ type MessageFormatOptions struct {
 type Websocket struct {
 	// Timeout for initial connection (in seconds)
 	HandshakeTimeout int `yaml:"handshake_timeout" env:"TG_PLUGIN__WS_HANDSHAKE_TIMEOUT" envDefault:"10"`
-	// Time between ping/pong messages (in seconds)
-	PingInterval int `yaml:"ping_interval" env:"TG_PLUGIN__WS_PING_INTERVAL" envDefault:"30"`
-	// Time to wait for pong response (in seconds)
-	PongWait int `yaml:"pong_wait" env:"TG_PLUGIN__WS_PONG_WAIT" envDefault:"60"`
 }
 
 // GotifyServer settings
@@ -181,8 +177,6 @@ func CreateDefaultPluginConfig() *Plugin {
 		ClientToken: "",
 		Websocket: Websocket{
 			HandshakeTimeout: 10,
-			PingInterval:     30,
-			PongWait:         60,
 		},
 	}
 
