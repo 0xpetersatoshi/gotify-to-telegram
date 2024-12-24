@@ -118,10 +118,19 @@ func (p *Plugin) Validate() error {
 		return errors.New("settings.telegram.default_chat_ids is required")
 	}
 
-	p.Settings.GotifyServer.Url, _ = url.Parse(p.Settings.GotifyServer.RawUrl)
+	if p.Settings.GotifyServer.RawUrl == "" {
+		return errors.New("settings.gotify_server.url is required")
+	}
+
+	parsedURL, err := url.Parse(p.Settings.GotifyServer.RawUrl)
+	if err != nil {
+		return err
+	}
+
+	p.Settings.GotifyServer.Url = parsedURL
 
 	if p.Settings.GotifyServer.Url == nil || p.Settings.GotifyServer.Url.Hostname() == "" {
-		return errors.New("settings.gotify_server.url is required")
+		return errors.New("settings.gotify_server.url is invalid")
 	}
 
 	if p.Settings.GotifyServer.ClientToken == "" {
@@ -232,9 +241,13 @@ func MergeWithEnvVars(cfg *Plugin) error {
 	}
 
 	// Gotify server settings
-	if envConfig.Settings.GotifyServer.RawUrl != DefaultURL {
+	if envConfig.Settings.GotifyServer.RawUrl != "" {
 		cfg.Settings.GotifyServer.RawUrl = envConfig.Settings.GotifyServer.RawUrl
-		cfg.Settings.GotifyServer.Url = cfg.Settings.GotifyServer.URL()
+		parsedURL, err := url.Parse(envConfig.Settings.GotifyServer.RawUrl)
+		if err != nil {
+			return err
+		}
+		cfg.Settings.GotifyServer.Url = parsedURL
 	}
 	if envConfig.Settings.GotifyServer.ClientToken != "" {
 		cfg.Settings.GotifyServer.ClientToken = envConfig.Settings.GotifyServer.ClientToken
