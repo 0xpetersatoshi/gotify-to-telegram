@@ -14,6 +14,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 type Payload struct {
 	ChatID    string `json:"chat_id"`
 	Text      string `json:"text"`
@@ -22,7 +26,7 @@ type Payload struct {
 
 type Client struct {
 	logger     *zerolog.Logger
-	httpClient *http.Client
+	httpClient HTTPClient
 	errChan    chan error
 }
 
