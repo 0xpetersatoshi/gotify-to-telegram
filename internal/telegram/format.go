@@ -3,6 +3,7 @@ package telegram
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,6 +17,11 @@ var linkRegex = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 
 // processMarkdownLinks processes markdown links in the given text
 func processMarkdownLinks(text string, logger *zerolog.Logger) string {
+	// If text doesn't contain valid links (i.e., both '[' and '](' must be present)
+	if !strings.Contains(text, "](") {
+		return escapeMarkdownV2(text)
+	}
+
 	// Process all matches at once using regex
 	return linkRegex.ReplaceAllStringFunc(text, func(match string) string {
 		// Extract link text and URL using regex submatches
@@ -39,14 +45,27 @@ func processMarkdownLinks(text string, logger *zerolog.Logger) string {
 
 // escapeURLForMarkdown escapes specific characters in URLs
 func escapeURLForMarkdown(url string) string {
-	// Escape only specific characters in URLs
-	// Note: We need to be more selective about what we escape in URLs
-	specialChars := []string{")", "("}
-	result := url
-	for _, char := range specialChars {
-		result = strings.ReplaceAll(result, char, "\\"+char)
+	var result strings.Builder
+	result.Grow(len(url) * 2) // Pre-allocate space for worst case
+
+	// Keep track of nested parentheses
+	parenDepth := 0
+
+	for _, char := range url {
+		switch char {
+		case '(':
+			parenDepth++
+			result.WriteString("\\(")
+		case ')':
+			parenDepth--
+			// Always escape a closing parenthesis
+			result.WriteString("\\)")
+		default:
+			result.WriteRune(char)
+		}
 	}
-	return result
+
+	return result.String()
 }
 
 // escapeMarkdownV2 escapes specific characters in MarkdownV2
@@ -84,7 +103,15 @@ func formatTitle(msg api.Message) string {
 
 // formatExtras handles the recursive formatting of nested maps
 func formatExtras(builder *strings.Builder, extras map[string]interface{}, prefix string, logger *zerolog.Logger) {
-	for key, value := range extras {
+	// Get keys and sort them
+	keys := make([]string, 0, len(extras))
+	for key := range extras {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := extras[key]
 		escapedKey := escapeMarkdownV2(key)
 
 		// Handle nested maps
@@ -147,7 +174,7 @@ func formatMessageForTelegram(msg api.Message, formatOpts config.MessageFormatOp
 
 	// Add any extras if present and not empty
 	if len(msg.Extras) > 0 && formatOpts.IncludeExtras {
-		builder.WriteString("\n\n*Additional Info:*")
+		builder.WriteString("\n*Additional Info:*")
 		formatExtras(&builder, msg.Extras, "", logger)
 	}
 
