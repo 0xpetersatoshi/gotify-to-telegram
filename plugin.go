@@ -15,7 +15,6 @@ import (
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/logger"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/telegram"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/utils"
-	"github.com/gin-gonic/gin"
 	"github.com/gotify/plugin-api"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -67,10 +66,6 @@ func (p *Plugin) Disable() error {
 	p.cancel()
 
 	return nil
-}
-
-// RegisterWebhook implements plugin.Webhooker.
-func (p *Plugin) RegisterWebhook(basePath string, g *gin.RouterGroup) {
 }
 
 func (p *Plugin) getTelegramBotConfigForAppID(appID uint32) config.TelegramBot {
