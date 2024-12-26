@@ -53,22 +53,26 @@ move-plugin-arm64: create-plugin-dir build-linux-arm64
 	cp ${BUILDDIR}/${PLUGIN_NAME}-linux-arm64${FILE_SUFFIX}.so ${PLUGINDIR}
 
 setup-gotify: compose-up
-	@echo "Waiting for Gotify to start..."
-	@sleep 10
-	$(eval NEW_TOKEN := $(shell curl -s -f -X POST \
-		-u admin:admin \
-		-H "Content-Type: application/json" \
-		-d '{"name":"test-client"}' \
-		http://localhost:8888/client \
-		| jq -r '.token'))
-	@if [ -n "$(NEW_TOKEN)" ]; then \
-		sed -i '' 's/^TG_PLUGIN__GOTIFY_CLIENT_TOKEN=.*/TG_PLUGIN__GOTIFY_CLIENT_TOKEN=$(NEW_TOKEN)/' .env && \
-		echo "TG_PLUGIN__GOTIFY_CLIENT_TOKEN updated in .env. Restarting gotify..." && \
-		docker compose down && docker compose up -d; \
-	else \
-		echo "Failed to get new token from Gotify"; \
-		exit 1; \
-	fi
+	@echo "Setting up Gotify..."
+	@for i in 1 2 3 4 5; do \
+		echo "Attempt $$i of 5..."; \
+		sleep 5; \
+		NEW_TOKEN=$$(curl -s -f -X POST \
+			-u admin:admin \
+			-H "Content-Type: application/json" \
+			-d '{"name":"test-client"}' \
+			http://localhost:8888/client \
+			| jq -r '.token'); \
+		if [ -n "$$NEW_TOKEN" ]; then \
+			sed -i '' 's/^TG_PLUGIN__GOTIFY_CLIENT_TOKEN=.*/TG_PLUGIN__GOTIFY_CLIENT_TOKEN='$$NEW_TOKEN'/' .env && \
+			echo "TG_PLUGIN__GOTIFY_CLIENT_TOKEN updated in .env. Restarting gotify..." && \
+			docker compose down && docker compose up -d && \
+			exit 0; \
+		fi; \
+		echo "Attempt $$i failed. Retrying..."; \
+	done; \
+	echo "Failed to get token from Gotify after 5 attempts"; \
+	exit 1
 
 test-plugin-arm64: move-plugin-arm64 setup-gotify
 
