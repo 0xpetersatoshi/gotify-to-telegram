@@ -37,7 +37,13 @@ build-linux-arm64: get-gotify-server-go-version update-go-mod
 
 build: build-linux-arm-7 build-linux-amd64 build-linux-arm64
 
-compose-up:
+check-env:
+	@if [ ! -f .env ]; then \
+		echo "Creating .env from .example.env..."; \
+		cp .example.env .env; \
+	fi
+
+compose-up: check-env
 	docker compose up -d
 
 compose-down:
@@ -51,6 +57,9 @@ create-plugin-dir:
 
 move-plugin-arm64: create-plugin-dir build-linux-arm64
 	cp ${BUILDDIR}/${PLUGIN_NAME}-linux-arm64${FILE_SUFFIX}.so ${PLUGINDIR}
+
+move-plugin-amd64: create-plugin-dir build-linux-amd64
+	cp ${BUILDDIR}/${PLUGIN_NAME}-linux-amd64${FILE_SUFFIX}.so ${PLUGINDIR}
 
 setup-gotify: compose-up
 	@echo "Setting up Gotify..."
@@ -76,4 +85,6 @@ setup-gotify: compose-up
 
 test-plugin-arm64: move-plugin-arm64 setup-gotify
 
-.PHONY: build
+test-plugin-amd64: move-plugin-amd64 setup-gotify
+
+.PHONY: build check-env compose-up compose-down test
