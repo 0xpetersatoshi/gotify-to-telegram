@@ -11,7 +11,7 @@ DOCKER_GO_BUILD=go build -mod=readonly -a -installsuffix cgo -ldflags "$$LD_FLAG
 GOMOD_CAP=go run github.com/gotify/plugin-api/cmd/gomod-cap
 
 download-tools:
-	GO111MODULE=off go get -u github.com/gotify/plugin-api/cmd/gomod-cap
+	go install github.com/gotify/plugin-api/cmd/gomod-cap@latest
 
 create-build-dir:
 	mkdir -p ${BUILDDIR} || true
