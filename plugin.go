@@ -54,7 +54,7 @@ type Plugin struct {
 // Enable enables the plugin.
 func (p *Plugin) Enable() error {
 	p.enabled = true
-	p.logger.Info().Msg("enabling plugin")
+	p.logger.Info().Msg("enabling plugin and starting services")
 	go p.Start()
 	return nil
 }
@@ -117,6 +117,7 @@ func (p *Plugin) Start() error {
 	if p.apiclient == nil {
 		p.errChan <- errors.New("api client is not initialized")
 	} else {
+		p.logger.Debug().Msg("starting api client")
 		go p.apiclient.Start()
 	}
 
@@ -191,11 +192,13 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	}
 
 	if !pluginCfg.Settings.IgnoreEnvVars {
+		p.logger.Debug().Msg("merging env vars with config")
 		// Env vars take precedence over yaml config
 		if err := config.MergeWithEnvVars(pluginCfg); err != nil {
 			return err
 		}
 
+		p.logger.Debug().Msg("re-validating config")
 		// re-validate after merging with env vars
 		if err := pluginCfg.Validate(); err != nil {
 			return err
@@ -206,6 +209,7 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	p.config = pluginCfg
 
 	if p.enabled {
+		p.logger.Info().Msg("plugin is enabled. Cancelling existing goroutines")
 		// Stop existing goroutines
 		p.cancel()
 	}
@@ -213,6 +217,7 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
 	p.logger = &updatedLogger
 
+	p.logger.Debug().Msg("creating new context")
 	ctx, cancel := context.WithCancel(context.Background())
 	p.ctx = ctx
 	p.cancel = cancel
@@ -226,6 +231,7 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	}
 
 	if p.enabled {
+		p.logger.Info().Msg("plugin is enabled. Starting new goroutines")
 		go p.Start()
 	}
 
@@ -233,8 +239,6 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 }
 
 func (p *Plugin) updateAPIConfig(ctx context.Context) error {
-	p.logger.Debug().Msg("stopping api client")
-
 	apiConfig := api.Config{
 		Url:              p.config.Settings.GotifyServer.Url,
 		ClientToken:      p.config.Settings.GotifyServer.ClientToken,
@@ -283,7 +287,7 @@ func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
 	apiclient := api.NewClient(ctx, apiConfig)
 	tgclient := telegram.NewClient(errChan)
 
-	log.Debug().Msg("creating plugin instance")
+	log.Info().Msg("creating new plugin instance")
 
 	return &Plugin{
 		userCtx:   userCtx,

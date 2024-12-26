@@ -128,7 +128,7 @@ func (p *Plugin) Validate() error {
 	p.Settings.GotifyServer.Url = parsedURL
 
 	if p.Settings.GotifyServer.Url == nil || p.Settings.GotifyServer.Url.Hostname() == "" {
-		return errors.New("settings.gotify_server.url is invalid")
+		return errors.New("settings.gotify_server.url is invalid. Should be in format http://localhost:80 or http://example.com")
 	}
 
 	if p.Settings.GotifyServer.ClientToken == "" {
