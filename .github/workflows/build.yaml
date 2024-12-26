@@ -1,0 +1,122 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+
+      - name: Download tools
+        run: make download-tools
+
+      - name: Run tests
+        run: make test
+
+  create-tag:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_version: ${{ steps.tag_version.outputs.new_version }}
+      tag: ${{ steps.tag_version.outputs.new_tag }}
+      supported_versions: ${{ steps.versions.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read versions file
+        id: versions
+        run: |
+          VERSIONS=$(cat SUPPORTED_GOTIFY_VERSIONS.txt | jq -R -s -c 'split("\n")[:-1]')
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+
+      - name: Create Tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+
+  build:
+    needs: create-tag
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        gotify_version: ${{ fromJson(needs.create-tag.outputs.supported_versions) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+
+      - name: Download tools
+        run: make download-tools
+
+      - name: Build plugin
+        run: >-
+          make
+          GOTIFY_VERSION="${{ matrix.gotify_version }}"
+          FILE_SUFFIX="-${{ needs.create-tag.outputs.new_version }}-for-gotify-${{ matrix.gotify_version }}"
+          LD_FLAGS="-X main.Version=${{ needs.create-tag.outputs.new_version }}"
+          build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: plugin-${{ matrix.gotify_version }}
+          path: build/*.so
+
+  release:
+    needs:
+      - create-tag
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version list
+        id: versions
+        run: |
+          version_list=$(cat SUPPORTED_GOTIFY_VERSIONS.txt | sed 's/^/- /')
+          echo "version_list<<EOF" >> $GITHUB_ENV
+          echo "$version_list" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Display structure of downloaded files
+        run: ls -R
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.create-tag.outputs.tag }}
+          name: Release ${{ needs.create-tag.outputs.tag }}
+          files: plugin-*/gotify-to-telegram-*.so
+          generate_release_notes: true
+          body: |
+            ## Supported Gotify Versions
+            ${{ env.version_list }}
+
+            ## Installation
+            Download the appropriate plugin file for your architecture and Gotify version:
+            - AMD64: `gotify-to-telegram-linux-amd64-${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
+            - ARM64: `gotify-to-telegram-linux-arm64-${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
+            - ARM7: `gotify-to-telegram-linux-arm-7-${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
