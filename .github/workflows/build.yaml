@@ -75,7 +75,7 @@ jobs:
         run: >-
           make
           GOTIFY_VERSION="${{ matrix.gotify_version }}"
-          FILE_SUFFIX="-${{ needs.create-tag.outputs.new_version }}-for-gotify-${{ matrix.gotify_version }}"
+          FILE_SUFFIX="-v${{ needs.create-tag.outputs.new_version }}-for-gotify-${{ matrix.gotify_version }}"
           LD_FLAGS="-X main.Version=${{ needs.create-tag.outputs.new_version }}"
           build
 
@@ -122,6 +122,6 @@ jobs:
 
             ## Installation
             Download the appropriate plugin file for your architecture and Gotify version:
-            - AMD64: `gotify-to-telegram-linux-amd64-${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
-            - ARM64: `gotify-to-telegram-linux-arm64-${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
-            - ARM7: `gotify-to-telegram-linux-arm-7-${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
+            - AMD64: `gotify-to-telegram-linux-amd64-v${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
+            - ARM64: `gotify-to-telegram-linux-arm64-v${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
+            - ARM7: `gotify-to-telegram-linux-arm-7-v${{ needs.create-tag.outputs.new_version }}-for-gotify-*.so`
