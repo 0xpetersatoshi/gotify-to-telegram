@@ -48,11 +48,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           default_bump: patch
-          commit_message: ${{ github.event.head_commit.message }}
-          source: pr-title
-          major_pattern: "(BREAKING CHANGE:|feat!:)"
-          minor_pattern: "^feat:"
-          patch_pattern: "^fix:"
 
   build:
     needs: create-tag
