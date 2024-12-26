@@ -192,7 +192,7 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 	}
 
 	if !pluginCfg.Settings.IgnoreEnvVars {
-		p.logger.Debug().Msg("merging env vars with config")
+		p.logger.Info().Msg("merging config with env vars. Any env vars defined will override yaml config")
 		// Env vars take precedence over yaml config
 		if err := config.MergeWithEnvVars(pluginCfg); err != nil {
 			return err
