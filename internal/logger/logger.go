@@ -15,11 +15,12 @@ var (
 )
 
 // Init initializes the global logger with initial configuration
-func Init(pluginName string, userCtx plugin.UserContext) *zerolog.Logger {
+func Init(pluginName string, pluginVersion string, userCtx plugin.UserContext) *zerolog.Logger {
 	once.Do(func() {
 		logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout}).
 			With().
 			Str("plugin", pluginName).
+			Str("plugin_version", pluginVersion).
 			Uint("user_id", userCtx.ID).
 			Str("user_name", userCtx.Name).
 			Bool("is_admin", userCtx.Admin).

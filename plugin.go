@@ -20,14 +20,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-//go:embed README.md
-var content embed.FS
+var (
+	//go:embed README.md
+	content embed.FS
+	Version string = "dev"
+)
 
 // GetGotifyPluginInfo returns gotify plugin info.
 func GetGotifyPluginInfo() plugin.Info {
 	return plugin.Info{
 		ModulePath:  "github.com/0xPeterSatoshi/gotify-to-telegram",
-		Version:     "1.0.0",
+		Version:     Version,
 		Author:      "0xPeterSatoshi",
 		Website:     "https://gotify.net/docs/plugin",
 		Description: "Send gotify notifications to telegram",
@@ -263,7 +266,7 @@ func (p *Plugin) updateTelegramConfig() error {
 // NewGotifyPluginInstance creates a plugin instance for a user context.
 func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
 	ctx, cancel := context.WithCancel(context.Background())
-	log := logger.Init("gotify-to-telegram", userCtx)
+	log := logger.Init("gotify-to-telegram", Version, userCtx)
 
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
