@@ -1,10 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/utils"
 	"github.com/caarlos0/env/v11"
 	"github.com/rs/zerolog"
 )
@@ -136,6 +139,34 @@ func (p *Plugin) Validate() error {
 	}
 
 	return nil
+}
+
+// SafeString returns a string representation of the plugin configuration
+// with sensitive data masked
+func (p *Plugin) SafeString() string {
+	// Create a deep copy of the config to avoid modifying the original
+	configCopy := *p
+
+	// Mask Gotify client token
+	configCopy.Settings.GotifyServer.ClientToken = utils.MaskToken(configCopy.Settings.GotifyServer.ClientToken)
+
+	// Mask default Telegram bot token
+	configCopy.Settings.Telegram.DefaultBotToken = utils.MaskToken(configCopy.Settings.Telegram.DefaultBotToken)
+
+	// Mask tokens for all configured bots
+	for botName, bot := range configCopy.Settings.Telegram.Bots {
+		botCopy := bot
+		botCopy.Token = utils.MaskToken(bot.Token)
+		configCopy.Settings.Telegram.Bots[botName] = botCopy
+	}
+
+	// Marshal the masked config to JSON
+	jsonBytes, err := json.MarshalIndent(configCopy, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Error marshaling config: %v", err)
+	}
+
+	return string(jsonBytes)
 }
 
 func CreateDefaultPluginConfig() *Plugin {
