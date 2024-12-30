@@ -178,6 +178,8 @@ func (p *Plugin) DefaultConfig() interface{} {
 		p.logger.Error().Err(err).Msg("failed to validate default config")
 	}
 
+	p.logger.Info().Msgf("default config: %s", cfg.SafeString())
+
 	return cfg
 }
 
@@ -237,6 +239,8 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		p.logger.Info().Msg("plugin is enabled. Starting new goroutines")
 		go p.Start()
 	}
+
+	p.logger.Info().Msgf("plugin config updated: %s", p.config.SafeString())
 
 	return nil
 }
