@@ -20,7 +20,7 @@ You can download pre-built plugins for your specific architecture and gotify ver
 Clone the repository and run:
 
 ```bash
-make GOTIFY_VERSION="v2.6.1" FILE_SUFFIX="for-gotify-v2.6.1" build
+make GOTIFY_VERSION="v2.6.1" FILE_SUFFIX="-for-gotify-v2.6.1" build
 ```
 
 > **Note**: Specify the `GOTIFY_VERSION` you want to build the plugin for.
