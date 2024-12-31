@@ -198,8 +198,8 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		p.cancel()
 	}
 
-	updatedLogger := p.logger.Level(p.config.Settings.LogOptions.GetZerologLevel())
-	p.logger = &updatedLogger
+	logger.UpdateLogLevel(p.config.Settings.LogOptions.GetZerologLevel())
+	p.logger = logger.Get()
 
 	p.logger.Debug().Msg("creating new context")
 	ctx, cancel := context.WithCancel(context.Background())

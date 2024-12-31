@@ -12,6 +12,7 @@ var (
 	globalLogger *zerolog.Logger
 	once         sync.Once
 	mu           sync.RWMutex
+	globalLevel  zerolog.Level = zerolog.InfoLevel
 )
 
 // Init initializes the global logger with initial configuration
@@ -26,7 +27,8 @@ func Init(pluginName string, pluginVersion string, userCtx plugin.UserContext) *
 			Bool("is_admin", userCtx.Admin).
 			Caller().
 			Timestamp().
-			Logger()
+			Logger().
+			Level(globalLevel)
 
 		globalLogger = &logger
 	})
@@ -53,6 +55,7 @@ func UpdateLogLevel(level zerolog.Level) {
 	defer mu.Unlock()
 
 	if globalLogger != nil {
+		globalLevel = level
 		newLogger := globalLogger.Level(level)
 		globalLogger = &newLogger
 	}
@@ -61,6 +64,10 @@ func UpdateLogLevel(level zerolog.Level) {
 // WithComponent adds a component field to the logger
 // Useful for package-specific logging
 func WithComponent(component string) *zerolog.Logger {
-	logger := Get().With().Str("component", component).Logger()
+	mu.RLock()
+	level := globalLevel
+	mu.RUnlock()
+
+	logger := Get().Level(level).With().Str("component", component).Logger()
 	return &logger
 }
