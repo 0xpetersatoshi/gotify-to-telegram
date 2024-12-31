@@ -10,7 +10,7 @@ import (
 )
 
 func TestCreateDefaultPluginConfig(t *testing.T) {
-	cfg := CreateDefaultPluginConfig()
+	cfg := DefaultConfig()
 	assert.NotNil(t, cfg)
 
 	// Test LogOptions defaults
@@ -207,7 +207,7 @@ func TestLoad(t *testing.T) {
 		}
 	}()
 
-	cfg := CreateDefaultPluginConfig()
+	cfg := DefaultConfig()
 	assert.False(t, cfg.Settings.IgnoreEnvVars)
 
 	// Load config with environment variables

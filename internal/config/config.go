@@ -168,7 +168,7 @@ func (p *Plugin) SafeString() string {
 	return string(jsonBytes)
 }
 
-func CreateDefaultPluginConfig() *Plugin {
+func DefaultConfig() *Plugin {
 	URL, _ := url.Parse(DefaultURL)
 	bot := TelegramBot{
 		Token: "example_token",

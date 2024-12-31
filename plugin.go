@@ -166,7 +166,7 @@ func (p *Plugin) GetDisplay(location *url.URL) string {
 // The default configuration will be provided to the user for future editing. Also used for Unmarshaling.
 // Invoked whenever an unmarshaling is required.
 func (p *Plugin) DefaultConfig() interface{} {
-	return config.CreateDefaultPluginConfig()
+	return config.DefaultConfig()
 }
 
 // Configure loads and updates the plugin configuration
@@ -254,11 +254,11 @@ func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
 
-	cfg := config.CreateDefaultPluginConfig()
+	cfg := config.DefaultConfig()
 	cfg, err := config.Load(cfg)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to parse env vars. Using defaults")
-		cfg = config.CreateDefaultPluginConfig()
+		cfg = config.DefaultConfig()
 	}
 
 	logLevel := cfg.Settings.LogOptions.GetZerologLevel()
