@@ -234,8 +234,7 @@ func (p *Plugin) updateAPIConfig(ctx context.Context) error {
 	}
 
 	p.logger.Debug().Msg("creating api client with new config")
-	apiclient := api.NewClient(ctx, apiConfig)
-	p.apiclient = apiclient
+	p.apiclient = api.NewClient(ctx, apiConfig)
 
 	return nil
 }
