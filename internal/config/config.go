@@ -1,11 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
-	"github.com/caarlos0/env/v11"
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/utils"
 	"github.com/rs/zerolog"
 )
 
@@ -26,29 +28,29 @@ type Settings struct {
 // Log options
 type LogOptions struct {
 	// LogLevel can be "debug", "info", "warn", "error"
-	LogLevel string `yaml:"log_level" env:"TG_PLUGIN__LOG_LEVEL" envDefault:"info"`
+	LogLevel string `yaml:"log_level" env:"TG_PLUGIN__LOG_LEVEL"`
 }
 
 // Message formatting options
 type MessageFormatOptions struct {
 	// Whether to include app name in message
-	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME" envDefault:"false"`
+	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME"`
 	// Whether to include timestamp in message
-	IncludeTimestamp bool `yaml:"include_timestamp" env:"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP" envDefault:"false"`
+	IncludeTimestamp bool `yaml:"include_timestamp" env:"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP"`
 	// Whether to include message extras in message
-	IncludeExtras bool `yaml:"include_extras" env:"TG_PLUGIN__MESSAGE_INCLUDE_EXTRAS" envDefault:"false"`
+	IncludeExtras bool `yaml:"include_extras" env:"TG_PLUGIN__MESSAGE_INCLUDE_EXTRAS"`
 	// Telegram parse mode (Markdown, MarkdownV2, HTML)
-	ParseMode string `yaml:"parse_mode" env:"TG_PLUGIN__MESSAGE_PARSE_MODE" envDefault:"MarkdownV2"`
+	ParseMode string `yaml:"parse_mode" env:"TG_PLUGIN__MESSAGE_PARSE_MODE"`
 	// Whether to include the message priority in the message
-	IncludePriority bool `yaml:"include_priority" env:"TG_PLUGIN__MESSAGE_INCLUDE_PRIORITY" envDefault:"false"`
+	IncludePriority bool `yaml:"include_priority" env:"TG_PLUGIN__MESSAGE_INCLUDE_PRIORITY"`
 	// Whether to include the message priority above a certain level
-	PriorityThreshold int `yaml:"priority_threshold" env:"TG_PLUGIN__MESSAGE_PRIORITY_THRESHOLD" envDefault:"0"`
+	PriorityThreshold int `yaml:"priority_threshold" env:"TG_PLUGIN__MESSAGE_PRIORITY_THRESHOLD"`
 }
 
 // Websocket settings
 type Websocket struct {
 	// Timeout for initial connection (in seconds)
-	HandshakeTimeout int `yaml:"handshake_timeout" env:"TG_PLUGIN__WS_HANDSHAKE_TIMEOUT" envDefault:"10"`
+	HandshakeTimeout int `yaml:"handshake_timeout" env:"TG_PLUGIN__WS_HANDSHAKE_TIMEOUT"`
 }
 
 // GotifyServer settings
@@ -138,7 +140,35 @@ func (p *Plugin) Validate() error {
 	return nil
 }
 
-func CreateDefaultPluginConfig() *Plugin {
+// SafeString returns a string representation of the plugin configuration
+// with sensitive data masked
+func (p *Plugin) SafeString() string {
+	// Create a deep copy of the config to avoid modifying the original
+	configCopy := *p
+
+	// Mask Gotify client token
+	configCopy.Settings.GotifyServer.ClientToken = utils.MaskToken(configCopy.Settings.GotifyServer.ClientToken)
+
+	// Mask default Telegram bot token
+	configCopy.Settings.Telegram.DefaultBotToken = utils.MaskToken(configCopy.Settings.Telegram.DefaultBotToken)
+
+	// Mask tokens for all configured bots
+	for botName, bot := range configCopy.Settings.Telegram.Bots {
+		botCopy := bot
+		botCopy.Token = utils.MaskToken(bot.Token)
+		configCopy.Settings.Telegram.Bots[botName] = botCopy
+	}
+
+	// Marshal the masked config to JSON
+	jsonBytes, err := json.MarshalIndent(configCopy, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Error marshaling config: %v", err)
+	}
+
+	return string(jsonBytes)
+}
+
+func DefaultConfig() *Plugin {
 	URL, _ := url.Parse(DefaultURL)
 	bot := TelegramBot{
 		Token: "example_token",
@@ -206,71 +236,18 @@ func (l *LogOptions) GetZerologLevel() zerolog.Level {
 	}
 }
 
-func ParseEnvVars() (*Plugin, error) {
-	cfg := &Plugin{}
-	if err := env.Parse(cfg); err != nil {
+// Load loads the yaml (and optionally) the environment variables into the plugin config
+func Load(newCfg *Plugin) (*Plugin, error) {
+	// Optionally load config from env vars
+	if !newCfg.Settings.IgnoreEnvVars {
+		if err := overlayEnvVars(newCfg); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := newCfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	cfg.Settings.GotifyServer.Url = cfg.Settings.GotifyServer.URL()
-
-	// Handle invalid URL by setting default
-	if cfg.Settings.GotifyServer.Url.Hostname() == "" {
-		defaultURL, _ := url.Parse(DefaultURL)
-		cfg.Settings.GotifyServer.Url = defaultURL
-	}
-
-	return cfg, nil
-}
-
-// MergeWithEnvVars applies environment variable values over the existing config
-func MergeWithEnvVars(cfg *Plugin) error {
-	// Create a new config from env vars
-	envConfig, err := ParseEnvVars()
-	if err != nil {
-		return err
-	}
-
-	// Only override non-zero/non-empty values from environment
-	if envConfig.Settings.LogOptions.LogLevel != "" {
-		cfg.Settings.LogOptions.LogLevel = envConfig.Settings.LogOptions.LogLevel
-	}
-
-	// Gotify server settings
-	if envConfig.Settings.GotifyServer.RawUrl != "" {
-		cfg.Settings.GotifyServer.RawUrl = envConfig.Settings.GotifyServer.RawUrl
-		parsedURL, err := url.Parse(envConfig.Settings.GotifyServer.RawUrl)
-		if err != nil {
-			return err
-		}
-		cfg.Settings.GotifyServer.Url = parsedURL
-	}
-	if envConfig.Settings.GotifyServer.ClientToken != "" {
-		cfg.Settings.GotifyServer.ClientToken = envConfig.Settings.GotifyServer.ClientToken
-	}
-
-	// Telegram settings
-	if envConfig.Settings.Telegram.DefaultBotToken != "" {
-		cfg.Settings.Telegram.DefaultBotToken = envConfig.Settings.Telegram.DefaultBotToken
-	}
-	if len(envConfig.Settings.Telegram.DefaultChatIDs) > 0 {
-		cfg.Settings.Telegram.DefaultChatIDs = envConfig.Settings.Telegram.DefaultChatIDs
-	}
-
-	// Message format options
-	opts := &cfg.Settings.Telegram.MessageFormatOptions
-	envOpts := &envConfig.Settings.Telegram.MessageFormatOptions
-
-	opts.IncludeAppName = envOpts.IncludeAppName
-	opts.IncludeTimestamp = envOpts.IncludeTimestamp
-	opts.IncludeExtras = envOpts.IncludeExtras
-	if envOpts.ParseMode != "" {
-		opts.ParseMode = envOpts.ParseMode
-	}
-	opts.IncludePriority = envOpts.IncludePriority
-	if envOpts.PriorityThreshold != 0 {
-		opts.PriorityThreshold = envOpts.PriorityThreshold
-	}
-
-	return nil
+	return newCfg, nil
 }

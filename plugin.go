@@ -166,19 +166,17 @@ func (p *Plugin) GetDisplay(location *url.URL) string {
 // The default configuration will be provided to the user for future editing. Also used for Unmarshaling.
 // Invoked whenever an unmarshaling is required.
 func (p *Plugin) DefaultConfig() interface{} {
-	cfg := config.CreateDefaultPluginConfig()
+	return config.DefaultConfig()
+}
 
-	if !cfg.Settings.IgnoreEnvVars {
-		if err := config.MergeWithEnvVars(cfg); err != nil {
-			p.logger.Error().Err(err).Msg("failed to merge with env vars")
-		}
+// Configure loads and updates the plugin configuration
+func (p *Plugin) Configure(cfg *config.Plugin) error {
+	newCfg, err := config.Load(cfg)
+	if err != nil {
+		return err
 	}
-
-	if err := cfg.Validate(); err != nil {
-		p.logger.Error().Err(err).Msg("failed to validate default config")
-	}
-
-	return cfg
+	p.config = newCfg
+	return nil
 }
 
 // ValidateAndSetConfig will be called every time the plugin is initialized or the configuration has been changed by the user.
@@ -190,26 +188,9 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		return fmt.Errorf("invalid config type: expected *config.Config, got %T", newConfig)
 	}
 
-	if err := pluginCfg.Validate(); err != nil {
+	if err := p.Configure(pluginCfg); err != nil {
 		return err
 	}
-
-	if !pluginCfg.Settings.IgnoreEnvVars {
-		p.logger.Info().Msg("merging config with env vars. Any env vars defined will override yaml config")
-		// Env vars take precedence over yaml config
-		if err := config.MergeWithEnvVars(pluginCfg); err != nil {
-			return err
-		}
-
-		p.logger.Debug().Msg("re-validating config")
-		// re-validate after merging with env vars
-		if err := pluginCfg.Validate(); err != nil {
-			return err
-		}
-	}
-
-	p.logger.Info().Msg("validated and setting new config")
-	p.config = pluginCfg
 
 	if p.enabled {
 		p.logger.Info().Msg("plugin is enabled. Cancelling existing goroutines")
@@ -217,8 +198,8 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		p.cancel()
 	}
 
-	updatedLogger := p.logger.Level(pluginCfg.Settings.LogOptions.GetZerologLevel())
-	p.logger = &updatedLogger
+	logger.UpdateLogLevel(p.config.Settings.LogOptions.GetZerologLevel())
+	p.logger = logger.Get()
 
 	p.logger.Debug().Msg("creating new context")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -238,6 +219,8 @@ func (p *Plugin) ValidateAndSetConfig(newConfig interface{}) error {
 		go p.Start()
 	}
 
+	p.logger.Info().Msgf("plugin config updated: %s", p.config.SafeString())
+
 	return nil
 }
 
@@ -251,8 +234,7 @@ func (p *Plugin) updateAPIConfig(ctx context.Context) error {
 	}
 
 	p.logger.Debug().Msg("creating api client with new config")
-	apiclient := api.NewClient(ctx, apiConfig)
-	p.apiclient = apiclient
+	p.apiclient = api.NewClient(ctx, apiConfig)
 
 	return nil
 }
@@ -271,10 +253,11 @@ func NewGotifyPluginInstance(userCtx plugin.UserContext) plugin.Plugin {
 	messages := make(chan api.Message, 100)
 	errChan := make(chan error, 100)
 
-	cfg, err := config.ParseEnvVars()
+	cfg := config.DefaultConfig()
+	cfg, err := config.Load(cfg)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to parse env vars. Using defaults")
-		cfg = config.CreateDefaultPluginConfig()
+		cfg = config.DefaultConfig()
 	}
 
 	logLevel := cfg.Settings.LogOptions.GetZerologLevel()
