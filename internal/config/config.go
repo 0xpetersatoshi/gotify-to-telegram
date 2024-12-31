@@ -305,3 +305,19 @@ func MergeWithEnvVars(cfg *Plugin) error {
 
 	return nil
 }
+
+// Load loads the yaml (and optionally) the environment variables into the plugin config
+func Load(newCfg *Plugin) (*Plugin, error) {
+	// Optionally load config from env vars
+	if !newCfg.Settings.IgnoreEnvVars {
+		if err := overlayEnvVars(newCfg); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := newCfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	return newCfg, nil
+}

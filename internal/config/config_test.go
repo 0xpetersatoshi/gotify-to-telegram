@@ -423,3 +423,48 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad(t *testing.T) {
+	// Set up test environment variables
+	envVars := map[string]string{
+		"TG_PLUGIN__GOTIFY_URL":                 "http://test-server.com",
+		"TG_PLUGIN__GOTIFY_CLIENT_TOKEN":        "client_token",
+		"TG_PLUGIN__TELEGRAM_DEFAULT_BOT_TOKEN": "test_bot_token",
+		"TG_PLUGIN__TELEGRAM_DEFAULT_CHAT_IDS":  "123,456",
+		"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME":   "true",
+		"TG_PLUGIN__LOG_LEVEL":                  "debug",
+	}
+
+	// Set environment variables
+	for k, v := range envVars {
+		os.Setenv(k, v)
+	}
+
+	// Clean up environment after test
+	defer func() {
+		for k := range envVars {
+			os.Unsetenv(k)
+		}
+	}()
+
+	cfg := CreateDefaultPluginConfig()
+	assert.False(t, cfg.Settings.IgnoreEnvVars)
+
+	// Load config with environment variables
+	loadedCfg, err := Load(cfg)
+
+	// Verify results
+	assert.NoError(t, err)
+	assert.NotNil(t, loadedCfg)
+
+	// Verify that env vars were properly overlaid
+	assert.Equal(t, "http://test-server.com", loadedCfg.Settings.GotifyServer.RawUrl)
+	assert.Equal(t, "test_bot_token", loadedCfg.Settings.Telegram.DefaultBotToken)
+	assert.Equal(t, []string{"123", "456"}, loadedCfg.Settings.Telegram.DefaultChatIDs)
+	assert.True(t, loadedCfg.Settings.Telegram.MessageFormatOptions.IncludeAppName)
+	assert.Equal(t, "debug", loadedCfg.Settings.LogOptions.LogLevel)
+
+	// Verify URL was properly parsed
+	expectedURL, _ := url.Parse("http://test-server.com")
+	assert.Equal(t, expectedURL, loadedCfg.Settings.GotifyServer.Url)
+}
