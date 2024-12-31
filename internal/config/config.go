@@ -28,29 +28,29 @@ type Settings struct {
 // Log options
 type LogOptions struct {
 	// LogLevel can be "debug", "info", "warn", "error"
-	LogLevel string `yaml:"log_level" env:"TG_PLUGIN__LOG_LEVEL" envDefault:"info"`
+	LogLevel string `yaml:"log_level" env:"TG_PLUGIN__LOG_LEVEL"`
 }
 
 // Message formatting options
 type MessageFormatOptions struct {
 	// Whether to include app name in message
-	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME" envDefault:"false"`
+	IncludeAppName bool `yaml:"include_app_name" env:"TG_PLUGIN__MESSAGE_INCLUDE_APP_NAME"`
 	// Whether to include timestamp in message
-	IncludeTimestamp bool `yaml:"include_timestamp" env:"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP" envDefault:"false"`
+	IncludeTimestamp bool `yaml:"include_timestamp" env:"TG_PLUGIN__MESSAGE_INCLUDE_TIMESTAMP"`
 	// Whether to include message extras in message
-	IncludeExtras bool `yaml:"include_extras" env:"TG_PLUGIN__MESSAGE_INCLUDE_EXTRAS" envDefault:"false"`
+	IncludeExtras bool `yaml:"include_extras" env:"TG_PLUGIN__MESSAGE_INCLUDE_EXTRAS"`
 	// Telegram parse mode (Markdown, MarkdownV2, HTML)
-	ParseMode string `yaml:"parse_mode" env:"TG_PLUGIN__MESSAGE_PARSE_MODE" envDefault:"MarkdownV2"`
+	ParseMode string `yaml:"parse_mode" env:"TG_PLUGIN__MESSAGE_PARSE_MODE"`
 	// Whether to include the message priority in the message
-	IncludePriority bool `yaml:"include_priority" env:"TG_PLUGIN__MESSAGE_INCLUDE_PRIORITY" envDefault:"false"`
+	IncludePriority bool `yaml:"include_priority" env:"TG_PLUGIN__MESSAGE_INCLUDE_PRIORITY"`
 	// Whether to include the message priority above a certain level
-	PriorityThreshold int `yaml:"priority_threshold" env:"TG_PLUGIN__MESSAGE_PRIORITY_THRESHOLD" envDefault:"0"`
+	PriorityThreshold int `yaml:"priority_threshold" env:"TG_PLUGIN__MESSAGE_PRIORITY_THRESHOLD"`
 }
 
 // Websocket settings
 type Websocket struct {
 	// Timeout for initial connection (in seconds)
-	HandshakeTimeout int `yaml:"handshake_timeout" env:"TG_PLUGIN__WS_HANDSHAKE_TIMEOUT" envDefault:"10"`
+	HandshakeTimeout int `yaml:"handshake_timeout" env:"TG_PLUGIN__WS_HANDSHAKE_TIMEOUT"`
 }
 
 // GotifyServer settings
