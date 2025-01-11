@@ -60,7 +60,7 @@ func (c *Client) Send(message api.Message, token, chatID string, formatOpts conf
 		Str("chat_id", chatID).
 		Msg("preparing to send message to Telegram")
 
-	formattedMessage, err := FormatMessage(message.Message, formatOpts)
+	formattedMessage, err := FormatMessage(message, formatOpts)
 	if err != nil {
 		c.errChan <- fmt.Errorf("failed to format message: %w", err)
 		return
