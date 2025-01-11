@@ -1,348 +1,141 @@
 package telegram
 
 import (
-	"strings"
 	"testing"
 
-	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
-	"github.com/rs/zerolog"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestProcessMarkdownLinks(t *testing.T) {
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
+func TestEscapeSpecialCharacters(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected string
 	}{
 		{
-			name:     "simple link",
-			input:    "[text](https://example.com)",
-			expected: "[text](https://example.com)",
+			name:     "basic special characters",
+			input:    "Hello! This is a (test) with [brackets]",
+			expected: "Hello\\! This is a \\(test\\) with \\[brackets\\]",
 		},
 		{
-			name:     "link with special characters",
-			input:    "[test!](https://example.com/test!)",
-			expected: "[test\\!](https://example.com/test!)",
-		},
-		{
-			name:     "multiple links",
-			input:    "[link1](url1) and [link2](url2)",
-			expected: "[link1](url1) and [link2](url2)",
-		},
-		{
-			name:     "invalid link format",
-			input:    "[broken link(http://example.com)",
-			expected: "\\[broken link\\(http://example\\.com\\)",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := processMarkdownLinks(tt.input, &logger)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestEscapeURLForMarkdown(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "url with parentheses",
-			input:    "http://example.com/path(1)",
-			expected: "http://example.com/path\\(1\\)",
-		},
-		{
-			name:     "simple url",
-			input:    "http://example.com",
-			expected: "http://example.com",
-		},
-		{
-			name:     "url with nested parentheses",
-			input:    "http://example.com/(test(1))",
-			expected: "http://example.com/\\(test\\(1\\)\\)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := escapeURLForMarkdown(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestEscapeMarkdownV2(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "special characters",
-			input:    "Hello *world* with _emphasis_!",
-			expected: "Hello \\*world\\* with \\_emphasis\\_\\!",
-		},
-		{
-			name:     "code and links",
-			input:    "Check `this` and [that]",
-			expected: "Check \\`this\\` and \\[that\\]",
-		},
-		{
-			name:     "dots and dashes",
-			input:    "Example.com - test",
-			expected: "Example\\.com \\- test",
+			name:     "multiple special characters",
+			input:    "test.test-test_test",
+			expected: "test\\.test\\-test\\_test",
 		},
 		{
 			name:     "no special characters",
-			input:    "Hello world",
-			expected: "Hello world",
+			input:    "Hello World",
+			expected: "Hello World",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := escapeMarkdownV2(tt.input)
-			assert.Equal(t, tt.expected, result)
+			result := escapeSpecialCharacters(tt.input)
+			if result != tt.expected {
+				t.Errorf("escapeSpecialCharacters(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
 		})
 	}
 }
 
-func TestConvertImageMarkdownToURL(t *testing.T) {
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
+func TestFormatPlainURL(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected string
 	}{
 		{
-			name:     "single image",
-			input:    "![](https://example.com/image.jpg)",
-			expected: "https://example.com/image.jpg",
+			name:     "simple URL",
+			input:    "https://example.com",
+			expected: "https://example\\.com",
 		},
 		{
-			name:     "multiple images",
-			input:    "![](image1.jpg)\n![](image2.jpg)",
-			expected: "image1.jpg\nimage2.jpg",
+			name:     "complex URL",
+			input:    "https://example.com/path-to/something.html",
+			expected: "https://example\\.com/path\\-to/something\\.html",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatPlainURL(tt.input)
+			if result != tt.expected {
+				t.Errorf("formatPlainURL(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractAndFormatImageURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "basic image markdown",
+			input:    "![](https://example.com/image.jpg)",
+			expected: "https://example\\.com/image\\.jpg",
+		},
+		{
+			name:     "image markdown with alt text",
+			input:    "![alt text](https://example.com/image.jpg)",
+			expected: "https://example\\.com/image\\.jpg",
 		},
 		{
 			name:     "invalid image markdown",
-			input:    "![broken(image.jpg)",
-			expected: "![broken(image.jpg)",
-		},
-		{
-			name:     "mixed content",
-			input:    "Text ![](image.jpg) more text",
-			expected: "Text image.jpg more text",
+			input:    "![invalid markdown",
+			expected: "![invalid markdown",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertImageMarkdownToURL(tt.input, &logger)
-			assert.Equal(t, tt.expected, result)
+			result := extractAndFormatImageURL(tt.input)
+			if result != tt.expected {
+				t.Errorf("extractAndFormatImageURL(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
 		})
 	}
 }
 
-func TestFormatExtras(t *testing.T) {
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-	var builder strings.Builder
-
-	tests := []struct {
-		name     string
-		extras   map[string]interface{}
-		prefix   string
-		expected string
-	}{
-		{
-			name: "simple extras",
-			extras: map[string]interface{}{
-				"key1": "value1",
-				"key2": 123,
-			},
-			prefix:   "",
-			expected: "\n• key1: `value1`\n• key2: `123`",
-		},
-		{
-			name: "nested extras",
-			extras: map[string]interface{}{
-				"outer": map[string]interface{}{
-					"inner": "value",
-				},
-			},
-			prefix:   "",
-			expected: "\n• outer:\n  • inner: `value`",
-		},
-		{
-			name: "mixed types",
-			extras: map[string]interface{}{
-				"string": "text",
-				"number": 42,
-				"bool":   true,
-			},
-			prefix:   "",
-			expected: "\n• bool: `true`\n• number: `42`\n• string: `text`",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			builder.Reset()
-			formatExtras(&builder, tt.extras, tt.prefix, &logger)
-			assert.Equal(t, tt.expected, builder.String())
-		})
-	}
-}
-
-func TestFormatMessageForTelegram(t *testing.T) {
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
+func TestFormatText(t *testing.T) {
 	tests := []struct {
 		name       string
-		message    api.Message
-		formatOpts config.MessageFormatOptions
+		input      string
 		expected   string
+		formatOpts config.MessageFormatOptions
 	}{
 		{
-			name: "basic message",
-			message: api.Message{
-				Title:   "Test Title",
-				Message: "Test Message",
-				AppName: "TestApp",
-			},
-			formatOpts: config.MessageFormatOptions{
-				IncludeAppName:   true,
-				IncludeTimestamp: false,
-			},
-			expected: "*\\[TestApp\\] Test Title*\n\nTest Message\n",
+			name: "complex text with multiple elements",
+			input: `Terminator Salvation (2009) [Remux-1080p] https://www.imdb.com/title/tt0438488/
+![](https://image.tmdb.org/t/p/original/gw6JhlekZgtKUFlDTezq3j5JEPK.jpg)
+[some url here](https://imdb.com)`,
+			expected: `Terminator Salvation \\(2009\\) \\[Remux\\-1080p\\] https://www\\.imdb\\.com/title/tt0438488/
+https://image\\.tmdb\\.org/t/p/original/gw6JhlekZgtKUFlDTezq3j5JEPK\\.jpg
+[some url here](https://imdb.com)`,
 		},
 		{
-			name: "message with priority",
-			message: api.Message{
-				Title:    "Priority Test",
-				Message:  "Important Message",
-				Priority: 8,
-			},
-			formatOpts: config.MessageFormatOptions{
-				IncludeAppName:    false,
-				IncludePriority:   true,
-				PriorityThreshold: 5,
-			},
-			expected: "*Priority Test*\n\nImportant Message\n\n🔴 Critical Priority",
+			name:     "text with inline URL",
+			input:    "Check out this [link](https://example.com/test.html) and this text.",
+			expected: "Check out this [link](https://example.com/test.html) and this text\\.",
 		},
 		{
-			name: "message with extras",
-			message: api.Message{
-				Title:   "Extras Test",
-				Message: "Test with extras",
-				Extras: map[string]interface{}{
-					"key": "value",
-				},
-			},
-			formatOpts: config.MessageFormatOptions{
-				IncludeExtras: true,
-			},
-			expected: "*Extras Test*\n\nTest with extras\n\n*Additional Info:*\n• key: `value`",
-		},
-		{
-			name: "message with markdown",
-			message: api.Message{
-				Title:   "Markdown Test",
-				Message: "[link](https://example.com) and ![](image.jpg)",
-			},
-			formatOpts: config.MessageFormatOptions{},
-			expected:   "*Markdown Test*\n\n[link](https://example.com) and image.jpg\n",
+			name:     "text with plain URL",
+			input:    "Visit https://example.com/test.html for more info!",
+			expected: "Visit https://example\\.com/test\\.html for more info\\!",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatMessageForTelegram(tt.message, tt.formatOpts, &logger)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestGetPriorityIndicator(t *testing.T) {
-	tests := []struct {
-		name     string
-		priority int
-		expected string
-	}{
-		{
-			name:     "critical priority",
-			priority: 8,
-			expected: "🔴 Critical Priority",
-		},
-		{
-			name:     "high priority",
-			priority: 6,
-			expected: "🟠 High Priority",
-		},
-		{
-			name:     "medium priority",
-			priority: 4,
-			expected: "🟡 Medium Priority",
-		},
-		{
-			name:     "low priority",
-			priority: 2,
-			expected: "🟢 Low Priority",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getPriorityIndicator(tt.priority)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestFormatTitle(t *testing.T) {
-	tests := []struct {
-		name     string
-		message  api.Message
-		expected string
-	}{
-		{
-			name: "basic title",
-			message: api.Message{
-				AppName: "TestApp",
-				Title:   "Test Title",
-			},
-			expected: "[TestApp] Test Title",
-		},
-		{
-			name: "empty app name",
-			message: api.Message{
-				AppName: "",
-				Title:   "Test Title",
-			},
-			expected: "[] Test Title",
-		},
-		{
-			name: "empty title",
-			message: api.Message{
-				AppName: "TestApp",
-				Title:   "",
-			},
-			expected: "[TestApp] ",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatTitle(tt.message)
-			assert.Equal(t, tt.expected, result)
+			result, err := FormatMessage(tt.input, tt.formatOpts)
+			require.NoError(t, err)
+			if result != tt.expected {
+				t.Errorf("FormatText(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
 		})
 	}
 }
