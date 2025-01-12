@@ -60,7 +60,11 @@ func (c *Client) Send(message api.Message, token, chatID string, formatOpts conf
 		Str("chat_id", chatID).
 		Msg("preparing to send message to Telegram")
 
-	formattedMessage := formatMessageForTelegram(message, formatOpts, c.logger)
+	formattedMessage, err := FormatMessage(message, formatOpts)
+	if err != nil {
+		c.errChan <- fmt.Errorf("failed to format message: %w", err)
+		return
+	}
 
 	payload := Payload{
 		ChatID:    chatID,
@@ -77,6 +81,7 @@ func (c *Client) Send(message api.Message, token, chatID string, formatOpts conf
 	endpoint := c.buildBotEndpoint(token)
 	c.logger.Debug().
 		Str("endpoint", strings.Replace(endpoint, token, "***", 1)).
+		Str("formattedMessage", formattedMessage).
 		Str("payload", string(body)).
 		Msg("sending request to Telegram API")
 

@@ -143,8 +143,15 @@ func (p *Plugin) Validate() error {
 // SafeString returns a string representation of the plugin configuration
 // with sensitive data masked
 func (p *Plugin) SafeString() string {
-	// Create a deep copy of the config to avoid modifying the original
-	configCopy := *p
+	// Create a deep copy using json marshal/unmarshal
+	var configCopy Plugin
+	data, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Sprintf("Error copying config: %v", err)
+	}
+	if err := json.Unmarshal(data, &configCopy); err != nil {
+		return fmt.Sprintf("Error copying config: %v", err)
+	}
 
 	// Mask Gotify client token
 	configCopy.Settings.GotifyServer.ClientToken = utils.MaskToken(configCopy.Settings.GotifyServer.ClientToken)
