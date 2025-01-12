@@ -1,41 +1,41 @@
 package telegram
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/api"
 	"github.com/0xPeterSatoshi/gotify-to-telegram/internal/config"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestEscapeSpecialCharacters(t *testing.T) {
+func TestEscapeMarkdownV2(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected string
 	}{
 		{
-			name:     "basic special characters",
-			input:    "Hello! This is a (test) with [brackets]",
-			expected: "Hello\\! This is a \\(test\\) with \\[brackets\\]",
+			name:     "it shoudl escape special characters",
+			input:    "Hello_World*[Test]",
+			expected: "Hello\\_World\\*\\[Test\\]",
 		},
 		{
-			name:     "multiple special characters",
-			input:    "test.test-test_test",
-			expected: "test\\.test\\-test\\_test",
+			name:     "it should preserve newline characters",
+			input:    "Hello\nWorld",
+			expected: "Hello\nWorld",
 		},
 		{
-			name:     "no special characters",
-			input:    "Hello World",
-			expected: "Hello World",
+			name:     "it should handle mixed special chars and newlines",
+			input:    "Hello_World\nTest*Now",
+			expected: "Hello\\_World\nTest\\*Now",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := escapeSpecialCharacters(tt.input)
-			if result != tt.expected {
-				t.Errorf("escapeSpecialCharacters(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
+			result := escapeMarkdownV2(tt.input)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -43,27 +43,25 @@ func TestEscapeSpecialCharacters(t *testing.T) {
 func TestFormatPlainURL(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    string
+		url      string
 		expected string
 	}{
 		{
-			name:     "simple URL",
-			input:    "https://example.com",
+			name:     "it should escape special characters in a simple url",
+			url:      "https://example.com",
 			expected: "https://example\\.com",
 		},
 		{
-			name:     "complex URL",
-			input:    "https://example.com/path-to/something.html",
-			expected: "https://example\\.com/path\\-to/something\\.html",
+			name:     "it should escape special characters in a url with special characters",
+			url:      "https://example.com/path_to/file.txt",
+			expected: "https://example\\.com/path\\_to/file\\.txt",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatPlainURL(tt.input)
-			if result != tt.expected {
-				t.Errorf("formatPlainURL(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
+			result := formatPlainURL(tt.url)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -75,67 +73,142 @@ func TestExtractAndFormatImageURL(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "basic image markdown",
-			input:    "![](https://example.com/image.jpg)",
-			expected: "https://example\\.com/image\\.jpg",
-		},
-		{
-			name:     "image markdown with alt text",
+			name:     "it should return the URL from valid image markdown",
 			input:    "![alt text](https://example.com/image.jpg)",
-			expected: "https://example\\.com/image\\.jpg",
+			expected: "https://example.com/image.jpg",
 		},
 		{
-			name:     "invalid image markdown",
-			input:    "![invalid markdown",
-			expected: "![invalid markdown",
+			name:     "it should return the entire string from invalid image markdown",
+			input:    "invalid markdown",
+			expected: "invalid markdown",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractAndFormatImageURL(tt.input)
-			if result != tt.expected {
-				t.Errorf("extractAndFormatImageURL(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestFormatText(t *testing.T) {
+func TestFormatMessageAsMarkdownV2(t *testing.T) {
 	tests := []struct {
-		name       string
-		input      string
-		expected   string
-		formatOpts config.MessageFormatOptions
+		name     string
+		input    string
+		expected string
 	}{
 		{
-			name: "complex text with multiple elements",
-			input: `Terminator Salvation (2009) [Remux-1080p] https://www.imdb.com/title/tt0438488/
-![](https://image.tmdb.org/t/p/original/gw6JhlekZgtKUFlDTezq3j5JEPK.jpg)
-[some url here](https://imdb.com)`,
-			expected: `Terminator Salvation \\(2009\\) \\[Remux\\-1080p\\] https://www\\.imdb\\.com/title/tt0438488/
-https://image\\.tmdb\\.org/t/p/original/gw6JhlekZgtKUFlDTezq3j5JEPK\\.jpg
-[some url here](https://imdb.com)`,
+			name:     "it should preserve text with inline URL",
+			input:    "Check [this link](https://example.com)",
+			expected: "Check [this link](https://example.com)",
 		},
 		{
-			name:     "text with inline URL",
-			input:    "Check out this [link](https://example.com/test.html) and this text.",
-			expected: "Check out this [link](https://example.com/test.html) and this text\\.",
+			name:     "it should extract and escape URL from image markdown",
+			input:    "See this: ![](https://example.com/img.jpg)",
+			expected: "See this: https://example\\.com/img\\.jpg",
 		},
 		{
-			name:     "text with plain URL",
-			input:    "Visit https://example.com/test.html for more info!",
-			expected: "Visit https://example\\.com/test\\.html for more info\\!",
+			name:     "it should escape text with special characters",
+			input:    "Hello_World*Test",
+			expected: "Hello\\_World\\*Test",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := FormatMessage(tt.input, tt.formatOpts)
-			require.NoError(t, err)
-			if result != tt.expected {
-				t.Errorf("FormatText(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
+			result := formatMessageAsMarkdownV2(tt.input)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestGetPriorityIndicator(t *testing.T) {
+	tests := []struct {
+		name     string
+		priority int
+		expected string
+	}{
+		{"critical priority", 8, "🔴 Critical Priority"},
+		{"high priority", 6, "🟠 High Priority"},
+		{"medium priority", 4, "🟡 Medium Priority"},
+		{"low priority", 2, "🟢 Low Priority"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getPriorityIndicator(tt.priority)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestFormatExtras(t *testing.T) {
+	tests := []struct {
+		name     string
+		extras   map[string]interface{}
+		expected string
+	}{
+		{
+			name: "it should format simple extras",
+			extras: map[string]interface{}{
+				"key1": "value1",
+				"key2": "value2",
+			},
+			expected: "\n• key1: `value1`\n• key2: `value2`\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var builder strings.Builder
+			formatExtras(&builder, tt.extras, "")
+			assert.Equal(t, tt.expected, builder.String())
+		})
+	}
+}
+
+func TestFormatMessage_Integration(t *testing.T) {
+	msg := api.Message{
+		Title:    "Test Title",
+		Message:  "Hello_World with [link](https://example.com)",
+		AppName:  "TestApp",
+		Priority: 8,
+		Extras: map[string]interface{}{
+			"key": "value",
+		},
+	}
+
+	opts := config.MessageFormatOptions{
+		ParseMode:         "MarkdownV2",
+		IncludeAppName:    true,
+		IncludePriority:   true,
+		IncludeExtras:     true,
+		IncludeTimestamp:  true,
+		PriorityThreshold: 5,
+	}
+
+	result, err := FormatMessage(msg, opts)
+	assert.NoError(t, err)
+	assert.Contains(t, result, `\[TestApp\]`)
+	assert.Contains(t, result, "Hello\\_World")
+	assert.Contains(t, result, "[link](https://example.com)")
+	assert.Contains(t, result, "🔴 Critical Priority")
+	assert.Contains(t, result, "key: `value`")
+	assert.Contains(t, result, "timestamp:")
+}
+
+func TestFormatMessage_InvalidParseMode(t *testing.T) {
+	msg := api.Message{
+		Title:   "Test",
+		Message: "Test",
+	}
+
+	opts := config.MessageFormatOptions{
+		ParseMode: "InvalidMode",
+	}
+
+	_, err := FormatMessage(msg, opts)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parse mode InvalidMode is not supported")
 }
